@@ -24,6 +24,7 @@ local DEFAULTS = {
 	swingText = true,  -- seconds to the next swing on the strip
 	hideNative = true, -- hide the look of the built-in swing timer bars
 	height = 6,        -- height of a swing strip in pixels
+	showMinimap = true, -- minimap button
 }
 
 local SWING_FRAMES = { "SwingTimerMainHandFrame", "SwingTimerOffHandFrame", "SwingTimerRangedFrame" }
@@ -281,6 +282,87 @@ local function setupSwing()
 	applyNativeLook()
 end
 
+---------------------------------------------------------------- options window, minimap button
+local category
+local LDBIcon
+
+local function openOptions()
+	if category and Settings and Settings.OpenToCategory then
+		Settings.OpenToCategory(category:GetID())
+	else
+		SlashCmdList.SWINGCAST("")
+	end
+end
+
+local function applyMinimap()
+	if not LDBIcon then return end
+	db.minimap = db.minimap or {}
+	db.minimap.hide = not db.showMinimap
+	if db.showMinimap then LDBIcon:Show(ADDON) else LDBIcon:Hide(ADDON) end
+end
+
+local function startTest()
+	testUntil = GetTime() + 8
+	P("8 s preview of the swing strip, the second half tinted as if Maul were queued.")
+end
+
+local function registerSettings()
+	if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting) then return end
+	category = Settings.RegisterVerticalLayoutCategory(ADDON)
+	local function checkbox(key, label, tooltip, onChange)
+		local setting = Settings.RegisterAddOnSetting(category, "SWINGCAST_" .. key:upper(), key, db,
+			Settings.VarType.Boolean, label, DEFAULTS[key])
+		Settings.CreateCheckbox(category, setting, tooltip)
+		if onChange then setting:SetValueChangedCallback(onChange) end
+	end
+	checkbox("icon", "Spell icon", "Show the spell icon left of the cast bar.")
+	checkbox("time", "Cast time", "Show the remaining cast time on the cast bar.")
+	checkbox("latency", "Latency zone", "Red zone at the end of the cast bar: once the bar reaches it, the next spell can be pressed.")
+	checkbox("swing", "Swing strip", "Swing timer as a thin strip under the cast bar.", applyNativeLook)
+	checkbox("swingText", "Swing seconds", "Seconds to the next swing on the strip.")
+	checkbox("hideNative", "Hide the built-in swing bars", "Hide the look of Forever's own swing timer bars while the strip is on.", applyNativeLook)
+	checkbox("showMinimap", "Minimap button", "Show the SwingCast button at the minimap.", applyMinimap)
+
+	local height = Settings.RegisterAddOnSetting(category, "SWINGCAST_HEIGHT", "height", db,
+		Settings.VarType.Number, "Swing strip height", DEFAULTS.height)
+	local opts = Settings.CreateSliderOptions(2, 20, 1)
+	if MinimalSliderWithSteppersMixin and opts.SetLabelFormatter then
+		opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+	end
+	Settings.CreateSlider(category, height, opts, "Height of the swing strip in pixels.")
+	height:SetValueChangedCallback(function() layoutStrips() end)
+
+	Settings.RegisterAddOnCategory(category)
+end
+
+local function registerMinimap()
+	local LibStub = _G.LibStub
+	local LDB = LibStub and LibStub("LibDataBroker-1.1", true)
+	LDBIcon = LibStub and LibStub("LibDBIcon-1.0", true)
+	if not (LDB and LDBIcon) then return end
+	local obj = LDB:NewDataObject(ADDON, {
+		type = "launcher",
+		text = ADDON,
+		icon = "Interface\\Icons\\Ability_Druid_Maul",
+		OnClick = function(_, button)
+			if button == "RightButton" then startTest() else openOptions() end
+		end,
+		OnTooltipShow = function(tt)
+			tt:AddLine(ADDON)
+			tt:AddLine("|cffffffffLeft-click:|r options", 0.8, 0.8, 0.8)
+			tt:AddLine("|cffffffffRight-click:|r swing strip preview", 0.8, 0.8, 0.8)
+		end,
+	})
+	db.minimap = db.minimap or {}
+	db.minimap.hide = not db.showMinimap
+	LDBIcon:Register(ADDON, obj, db.minimap)
+end
+
+-- Entry in the game's addon menu (the button next to the minimap).
+function SwingCast_OnCompartmentClick(_, button)
+	if button == "RightButton" then startTest() else openOptions() end
+end
+
 ---------------------------------------------------------------- settings
 local TOGGLES = {
 	icon = "spell icon",
@@ -291,27 +373,35 @@ local TOGGLES = {
 	hideNative = "hide the built-in swing bars",
 }
 local ORDER = { "icon", "time", "latency", "swing", "swingText", "hideNative" }
+local KEY = {} -- lower-case command -> setting key, so /swc swingtext works too
+for _, k in ipairs(ORDER) do KEY[k:lower()] = k end
 
 SLASH_SWINGCAST1 = "/swc"
 SLASH_SWINGCAST2 = "/swingcast"
 SlashCmdList.SWINGCAST = function(msg)
 	local cmd, arg = strsplit(" ", strtrim(msg or ""):lower(), 2)
-	if TOGGLES[cmd] ~= nil then
-		db[cmd] = not db[cmd]
-		P(TOGGLES[cmd] .. ": " .. (db[cmd] and "on" or "off"))
+	local key = KEY[cmd or ""]
+	if key then
+		db[key] = not db[key]
+		P(TOGGLES[key] .. ": " .. (db[key] and "on" or "off"))
 		applyNativeLook()
 	elseif cmd == "height" and tonumber(arg) then
 		db.height = math.min(math.max(math.floor(tonumber(arg)), 2), 20)
 		layoutStrips()
 		P("swing strip height: " .. db.height)
 	elseif cmd == "test" then
-		testUntil = GetTime() + 8
-		P("8 s preview of the swing strip, the second half tinted as if Maul were queued.")
+		startTest()
+	elseif cmd == "options" or cmd == "config" then
+		openOptions()
+	elseif cmd == "minimap" then
+		db.showMinimap = not db.showMinimap
+		applyMinimap()
+		P("minimap button: " .. (db.showMinimap and "on" or "off"))
 	elseif cmd == "reset" then
-		SwingCastDB = CopyTable(DEFAULTS)
-		db = SwingCastDB
+		for k, v in pairs(DEFAULTS) do db[k] = v end
 		layoutStrips()
 		applyNativeLook()
+		applyMinimap()
 		P("settings reset.")
 	else
 		P("/swc <setting> switches it on or off:")
@@ -320,6 +410,8 @@ SlashCmdList.SWINGCAST = function(msg)
 		end
 		print("  height <2-20> - swing strip height (" .. db.height .. ")")
 		print("  test - 8 s preview of the swing strip")
+		print("  options - settings window")
+		print("  minimap - minimap button on or off")
 		print("  reset - default settings")
 	end
 end
@@ -335,6 +427,8 @@ loader:SetScript("OnEvent", function(_, event, name)
 		for k, v in pairs(DEFAULTS) do
 			if db[k] == nil then db[k] = v end
 		end
+		registerSettings()
+		registerMinimap()
 	elseif event == "ADDON_LOADED" and name == "Blizzard_SwingTimer" then
 		if IsLoggedIn() then setupSwing() end
 	elseif event == "PLAYER_LOGIN" then

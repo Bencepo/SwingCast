@@ -12,6 +12,7 @@ globals = {
 	"SLASH_SWINGCAST1",
 	"SLASH_SWINGCAST2",
 	"SlashCmdList",
+	"SwingCast_OnCompartmentClick",
 }
 
-exclude_files = { ".release/**" }
+exclude_files = { ".release/**", "Libs/**" }

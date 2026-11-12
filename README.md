@@ -14,6 +14,10 @@ The swing strip mirrors Forever's built-in swing timer (`Blizzard_SwingTimer`). 
 
 The built-in swing timer has to be switched on: Options > Advanced Options > Swing Timer.
 
+## Options
+
+Options > AddOns > SwingCast, or the minimap button (left-click: options, right-click: preview), or the game's addon menu next to the minimap.
+
 ## Commands
 
 `/swc` lists the settings. Each one is switched with `/swc <setting>`:
@@ -27,7 +31,7 @@ The built-in swing timer has to be switched on: Options > Advanced Options > Swi
 | `swingText` | seconds on the swing strip |
 | `hideNative` | hide the built-in swing bars |
 
-`/swc height <2-20>` sets the strip height, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
+`/swc options` opens the options window, `/swc minimap` hides or shows the minimap button, `/swc height <2-20>` sets the strip height, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
 
 ## License
 

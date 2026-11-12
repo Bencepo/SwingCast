@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2-alpha
+
+- Own minimap and addon list icon.
+
 ## 0.3.1-alpha
 
 - Now also released on Wago.

@@ -8,7 +8,7 @@
 ## X-Curse-Project-ID: 1800255
 ## X-Wago-ID: RNL4YYNo
 ## SavedVariables: SwingCastDB
-## IconTexture: Interface\Icons\Ability_Druid_Maul
+## IconTexture: Interface\AddOns\SwingCast\Icons\minimap
 ## AddonCompartmentFunc: SwingCast_OnCompartmentClick
 
 Libs\LibStub\LibStub.lua

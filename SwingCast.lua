@@ -451,7 +451,7 @@ local function registerMinimap()
 	local obj = LDB:NewDataObject(ADDON, {
 		type = "launcher",
 		text = ADDON,
-		icon = "Interface\\Icons\\Ability_Druid_Maul",
+		icon = "Interface\\AddOns\\SwingCast\\Icons\\minimap",
 		OnClick = function(_, button)
 			if button == "RightButton" then startTest() else openOptions() end
 		end,

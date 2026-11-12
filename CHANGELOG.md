@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- First stable release. No functional changes since 0.3.2.
+- README and project description now lead with the options window; chat commands moved to an advanced section.
+
 ## 0.3.2-alpha
 
 - Own minimap and addon list icon.

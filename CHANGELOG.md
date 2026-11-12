@@ -11,3 +11,4 @@
 - Swing strip under the cast bar, mirrored from Forever's built-in swing timer (main hand, off hand and ranged where present).
 - Strip turns orange while Maul, Heroic Strike or Raptor Strike is queued, blue for Cleave.
 - `/swc` settings, `/swc test` preview.
+- Released on CurseForge (project 1800255).

@@ -5,6 +5,7 @@
 ## Author: Bencepo
 ## Version: @project-version@
 ## X-License: All Rights Reserved
+## X-Curse-Project-ID: 1800255
 ## SavedVariables: SwingCastDB
 ## IconTexture: Interface\Icons\Ability_Druid_Maul
 

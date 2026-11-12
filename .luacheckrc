@@ -13,6 +13,8 @@ globals = {
 	"SLASH_SWINGCAST2",
 	"SlashCmdList",
 	"SwingCast_OnCompartmentClick",
+	-- set only on clients without SetupColorPickerAndShow (old colour picker API)
+	"ColorPickerFrame",
 }
 
 exclude_files = { ".release/**", "Libs/**" }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- The cast time label is only redrawn when the shown value changes, not every frame.
+- Code check with LuaLS and the WoW API annotations runs with every change; removed fallbacks for old clients.
+
 ## 0.4.0
 
 - First stable release. No functional changes since 0.3.2.

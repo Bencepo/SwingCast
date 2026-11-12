@@ -16,7 +16,7 @@ The built-in swing timer has to be switched on: Options > Advanced Options > Swi
 
 ## Options
 
-Options > AddOns > SwingCast, or the minimap button (left-click: options, right-click: preview), or the game's addon menu next to the minimap.
+Options > AddOns > SwingCast: every switch, strip height, font and font size, and the colours of the swing strip, the queued swing, Cleave and the latency zone. Open it there, with the minimap button (left-click: options, right-click: preview), or the game's addon menu next to the minimap.
 
 ## Commands
 
@@ -31,7 +31,7 @@ Options > AddOns > SwingCast, or the minimap button (left-click: options, right-
 | `swingText` | seconds on the swing strip |
 | `hideNative` | hide the built-in swing bars |
 
-`/swc options` opens the options window, `/swc minimap` hides or shows the minimap button, `/swc height <2-20>` sets the strip height, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
+`/swc options` opens the options window, `/swc minimap` hides or shows the minimap button, `/swc height <2-20>` sets the strip height, `/swc font <7-20>` the font size, `/swc color swing|queued|cleave|latency|reset` opens the colour picker, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
 
 ## License
 

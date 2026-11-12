@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0-alpha
+
+- Font: choose the font of the cast time and the swing seconds (the fonts every client has) and its size, in the options window or with `/swc font <7-20>`.
+- Colours: swing strip, queued swing, Cleave and latency zone each get a "Choose" button in the options window that opens the game's colour picker, plus a reset button. Also `/swc color swing|queued|cleave|latency|reset`.
+
 ## 0.2.0-alpha
 
 - Minimap button: left-click opens the options, right-click shows the swing strip preview. `/swc minimap` hides or shows it.

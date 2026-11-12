@@ -25,26 +25,47 @@ local DEFAULTS = {
 	hideNative = true, -- hide the look of the built-in swing timer bars
 	height = 6,        -- height of a swing strip in pixels
 	showMinimap = true, -- minimap button
+	font = "FRIZQT",    -- font of the cast time and the swing seconds
+	fontSize = 10,      -- size of the cast time; the swing seconds are 2 smaller
+}
+
+-- Colours as { r, g, b }, kept in db.colors and changed in the options window.
+local DEFAULT_COLORS = {
+	swing = { 0.85, 0.85, 0.85 },   -- swing strip
+	queued = { 1.00, 0.55, 0.10 },  -- Maul, Heroic Strike, Raptor Strike queued
+	cleave = { 0.25, 0.60, 1.00 },  -- Cleave queued
+	latency = { 1.00, 0.10, 0.10 }, -- latency zone on the cast bar
+}
+local COLOR_LABELS = {
+	{ "swing", "Swing strip colour", "Colour of the swing strip." },
+	{ "queued", "Queued swing colour", "Colour while Maul, Heroic Strike or Raptor Strike is queued." },
+	{ "cleave", "Cleave colour", "Colour while Cleave is queued (warriors)." },
+	{ "latency", "Latency zone colour", "Colour of the latency zone at the end of the cast bar." },
+}
+
+-- Fonts that ship with every game client.
+local FONTS = {
+	{ key = "FRIZQT", label = "Friz Quadrata (game default)", path = "Fonts\\FRIZQT__.TTF" },
+	{ key = "ARIALN", label = "Arial Narrow", path = "Fonts\\ARIALN.TTF" },
+	{ key = "MORPHEUS", label = "Morpheus", path = "Fonts\\MORPHEUS.TTF" },
+	{ key = "SKURRI", label = "Skurri", path = "Fonts\\SKURRI.TTF" },
 }
 
 local SWING_FRAMES = { "SwingTimerMainHandFrame", "SwingTimerOffHandFrame", "SwingTimerRangedFrame" }
 
-local COLOR_SWING = { 0.85, 0.85, 0.85 }
-local COLOR_QUEUED = { 1.00, 0.55, 0.10 }
-local COLOR_CLEAVE = { 0.25, 0.60, 1.00 }
 
 -- All ranks: an old action button can still hold a low rank, and IsCurrentSpell
 -- only reports the exact rank that was queued. First match decides the colour.
 local QUEUE = {
 	DRUID = { -- Maul
-		{ ids = { 6807, 6808, 6809, 8972, 9745, 9880, 9881 }, color = COLOR_QUEUED },
+		{ ids = { 6807, 6808, 6809, 8972, 9745, 9880, 9881 }, color = "queued" },
 	},
 	WARRIOR = { -- Heroic Strike, Cleave
-		{ ids = { 78, 284, 285, 1608, 11564, 11565, 11566, 11567, 25286 }, color = COLOR_QUEUED },
-		{ ids = { 845, 7369, 11608, 11609, 20569 }, color = COLOR_CLEAVE },
+		{ ids = { 78, 284, 285, 1608, 11564, 11565, 11566, 11567, 25286 }, color = "queued" },
+		{ ids = { 845, 7369, 11608, 11609, 20569 }, color = "cleave" },
 	},
 	HUNTER = { -- Raptor Strike
-		{ ids = { 2973, 14260, 14261, 14262, 14263, 14264, 14265, 14266 }, color = COLOR_QUEUED },
+		{ ids = { 2973, 14260, 14261, 14262, 14263, 14264, 14265, 14266 }, color = "queued" },
 	},
 }
 
@@ -54,8 +75,21 @@ local queueList = QUEUE[playerClass]
 
 local db
 local castBar -- the standard player cast bar
+local applyLook -- font and colours, defined with the swing strips
 
 local function P(msg) print("|cff7fbf3fSwingCast:|r " .. msg) end
+
+local function color(key)
+	local c = db and db.colors and db.colors[key] or DEFAULT_COLORS[key]
+	return c[1], c[2], c[3]
+end
+
+local function fontPath()
+	for _, f in ipairs(FONTS) do
+		if f.key == db.font then return f.path end
+	end
+	return FONTS[1].path
+end
 
 ---------------------------------------------------------------- cast bar
 local icon, timeText, lagTex
@@ -128,10 +162,12 @@ local function setupCastBar()
 	timeText:SetJustifyH("RIGHT")
 
 	lagTex = castBar:CreateTexture(nil, "ARTWORK", nil, 7)
-	lagTex:SetColorTexture(1, 0.1, 0.1, 0.45)
+	local r, g, b = color("latency")
+	lagTex:SetColorTexture(r, g, b, 0.45)
 	lagTex:Hide()
 
 	castBar:HookScript("OnUpdate", castOnUpdate)
+	applyLook()
 
 	local ev = CreateFrame("Frame")
 	for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_STOP",
@@ -144,19 +180,19 @@ end
 
 ---------------------------------------------------------------- swing strips
 local strips = {}   -- { native = frame, bar = our StatusBar }
-local tint = COLOR_SWING
+local tint = "swing"
 local sinceQueue = 0
 local testUntil
 
 local function queuedColor()
-	if not queueList then return COLOR_SWING end
+	if not queueList then return "swing" end
 	for i = 1, #queueList do
 		local ids = queueList[i].ids
 		for j = 1, #ids do
 			if IsCurrentSpell(ids[j]) then return queueList[i].color end
 		end
 	end
-	return COLOR_SWING
+	return "swing"
 end
 
 local issecret = issecretvalue or function() return false end
@@ -228,10 +264,11 @@ driver:SetScript("OnUpdate", function(_, elapsed)
 	sinceQueue = sinceQueue + elapsed
 	if sinceQueue >= 0.05 then
 		sinceQueue = 0
-		local c = testUntil and ((now % 4 < 2) and COLOR_QUEUED or COLOR_SWING) or queuedColor()
+		local c = testUntil and ((now % 4 < 2) and "queued" or "swing") or queuedColor()
 		if c ~= tint then
 			tint = c
-			for _, s in ipairs(strips) do s.bar:SetStatusBarColor(c[1], c[2], c[3]) end
+			local r, g, b = color(c)
+			for _, s in ipairs(strips) do s.bar:SetStatusBarColor(r, g, b) end
 		end
 	end
 	for _, s in ipairs(strips) do safeUpdate(s, now) end
@@ -240,7 +277,7 @@ end)
 local function makeStrip(native)
 	local bar = CreateFrame("StatusBar", nil, UIParent)
 	bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
-	bar:SetStatusBarColor(COLOR_SWING[1], COLOR_SWING[2], COLOR_SWING[3])
+	bar:SetStatusBarColor(color("swing"))
 	bar:SetFrameStrata("MEDIUM")
 	bar:Hide()
 
@@ -262,10 +299,23 @@ local function makeStrip(native)
 
 	local text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	text:SetPoint("RIGHT", bar, "RIGHT", -2, 0)
-	local font, size = text:GetFont()
-	if font then text:SetFont(font, math.max(size - 2, 8), "OUTLINE") end
 
 	return { native = native, bar = bar, text = text, spark = spark }
+end
+
+-- Font and colours, applied again whenever a setting changes.
+applyLook = function()
+	local path = fontPath()
+	if timeText then timeText:SetFont(path, db.fontSize, "OUTLINE") end
+	if lagTex then
+		local r, g, b = color("latency")
+		lagTex:SetColorTexture(r, g, b, 0.45)
+	end
+	local r, g, b = color(tint)
+	for _, s in ipairs(strips) do
+		s.text:SetFont(path, math.max(db.fontSize - 2, 7), "OUTLINE")
+		s.bar:SetStatusBarColor(r, g, b)
+	end
 end
 
 local function setupSwing()
@@ -280,6 +330,7 @@ local function setupSwing()
 	end
 	layoutStrips()
 	applyNativeLook()
+	applyLook()
 end
 
 ---------------------------------------------------------------- options window, minimap button
@@ -301,6 +352,31 @@ local function applyMinimap()
 	if db.showMinimap then LDBIcon:Show(ADDON) else LDBIcon:Hide(ADDON) end
 end
 
+local function pickColor(key)
+	local r, g, b = color(key)
+	local function set(nr, ng, nb)
+		db.colors[key] = { nr, ng, nb }
+		applyLook()
+	end
+	local function swatch() set(ColorPickerFrame:GetColorRGB()) end
+	local function cancel() set(r, g, b) end
+	if ColorPickerFrame.SetupColorPickerAndShow then
+		ColorPickerFrame:SetupColorPickerAndShow({ r = r, g = g, b = b, hasOpacity = false,
+			swatchFunc = swatch, cancelFunc = cancel })
+	else
+		ColorPickerFrame.hasOpacity = false
+		ColorPickerFrame.func = swatch
+		ColorPickerFrame.cancelFunc = cancel
+		ColorPickerFrame:SetColorRGB(r, g, b)
+		ColorPickerFrame:Show()
+	end
+end
+
+local function resetColors()
+	db.colors = CopyTable(DEFAULT_COLORS)
+	applyLook()
+end
+
 local function startTest()
 	testUntil = GetTime() + 8
 	P("8 s preview of the swing strip, the second half tinted as if Maul were queued.")
@@ -308,7 +384,8 @@ end
 
 local function registerSettings()
 	if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting) then return end
-	category = Settings.RegisterVerticalLayoutCategory(ADDON)
+	local layout
+	category, layout = Settings.RegisterVerticalLayoutCategory(ADDON)
 	local function checkbox(key, label, tooltip, onChange)
 		local setting = Settings.RegisterAddOnSetting(category, "SWINGCAST_" .. key:upper(), key, db,
 			Settings.VarType.Boolean, label, DEFAULTS[key])
@@ -331,6 +408,37 @@ local function registerSettings()
 	end
 	Settings.CreateSlider(category, height, opts, "Height of the swing strip in pixels.")
 	height:SetValueChangedCallback(function() layoutStrips() end)
+
+	-- Font: a dropdown of the fonts every client has, and the size.
+	local dropdown = Settings.CreateDropdown or Settings.CreateDropDown
+	if dropdown and Settings.CreateControlTextContainer then
+		local font = Settings.RegisterAddOnSetting(category, "SWINGCAST_FONT", "font", db,
+			Settings.VarType.String, "Font", DEFAULTS.font)
+		dropdown(category, font, function()
+			local c = Settings.CreateControlTextContainer()
+			for _, f in ipairs(FONTS) do c:Add(f.key, f.label) end
+			return c:GetData()
+		end, "Font of the cast time and the swing seconds.")
+		font:SetValueChangedCallback(function() applyLook() end)
+	end
+	local size = Settings.RegisterAddOnSetting(category, "SWINGCAST_FONTSIZE", "fontSize", db,
+		Settings.VarType.Number, "Font size", DEFAULTS.fontSize)
+	local sizeOpts = Settings.CreateSliderOptions(7, 20, 1)
+	if MinimalSliderWithSteppersMixin and sizeOpts.SetLabelFormatter then
+		sizeOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+	end
+	Settings.CreateSlider(category, size, sizeOpts, "Size of the cast time. The swing seconds are 2 smaller.")
+	size:SetValueChangedCallback(function() applyLook() end)
+
+	-- Colours: a button each that opens the game's colour picker.
+	if layout and CreateSettingsButtonInitializer then
+		for _, c in ipairs(COLOR_LABELS) do
+			local key = c[1]
+			layout:AddInitializer(CreateSettingsButtonInitializer(c[2], "Choose", function() pickColor(key) end, c[3], true))
+		end
+		layout:AddInitializer(CreateSettingsButtonInitializer("Default colours", "Reset", resetColors,
+			"Set all colours back to the defaults.", true))
+	end
 
 	Settings.RegisterAddOnCategory(category)
 end
@@ -391,6 +499,19 @@ SlashCmdList.SWINGCAST = function(msg)
 		P("swing strip height: " .. db.height)
 	elseif cmd == "test" then
 		startTest()
+	elseif cmd == "color" or cmd == "colour" then
+		if arg == "reset" then
+			resetColors()
+			P("colours reset.")
+		elseif arg and DEFAULT_COLORS[arg] then
+			pickColor(arg)
+		else
+			P("/swc color swing|queued|cleave|latency|reset")
+		end
+	elseif cmd == "font" and tonumber(arg) then
+		db.fontSize = math.min(math.max(math.floor(tonumber(arg)), 7), 20)
+		applyLook()
+		P("font size: " .. db.fontSize)
 	elseif cmd == "options" or cmd == "config" then
 		openOptions()
 	elseif cmd == "minimap" then
@@ -399,6 +520,8 @@ SlashCmdList.SWINGCAST = function(msg)
 		P("minimap button: " .. (db.showMinimap and "on" or "off"))
 	elseif cmd == "reset" then
 		for k, v in pairs(DEFAULTS) do db[k] = v end
+		db.colors = CopyTable(DEFAULT_COLORS)
+		applyLook()
 		layoutStrips()
 		applyNativeLook()
 		applyMinimap()
@@ -410,6 +533,8 @@ SlashCmdList.SWINGCAST = function(msg)
 		end
 		print("  height <2-20> - swing strip height (" .. db.height .. ")")
 		print("  test - 8 s preview of the swing strip")
+		print("  color swing|queued|cleave|latency - pick a colour, color reset - default colours")
+		print("  font <7-20> - font size")
 		print("  options - settings window")
 		print("  minimap - minimap button on or off")
 		print("  reset - default settings")
@@ -426,6 +551,10 @@ loader:SetScript("OnEvent", function(_, event, name)
 		db = SwingCastDB
 		for k, v in pairs(DEFAULTS) do
 			if db[k] == nil then db[k] = v end
+		end
+		db.colors = db.colors or {}
+		for k, v in pairs(DEFAULT_COLORS) do
+			if type(db.colors[k]) ~= "table" then db.colors[k] = CopyTable(v) end
 		end
 		registerSettings()
 		registerMinimap()

@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: SwingCast
+## Notes: Adds to the standard cast bar: spell icon, cast time, latency zone, and your swing timer right under it, tinted while Maul, Heroic Strike, Cleave or Raptor Strike is queued. /swc
+## Notes-deDE: Erweitert den Standard-Zauberbalken: Symbol, Zauberzeit, Latenzbereich und darunter dein Swing-Timer, eingefärbt solange Maul, Heroic Strike, Cleave oder Raptor Strike vorgemerkt ist. /swc
+## Author: Bencepo
+## Version: @project-version@
+## X-License: All Rights Reserved
+## SavedVariables: SwingCastDB
+## IconTexture: Interface\Icons\Ability_Druid_Maul
+
+SwingCast.lua

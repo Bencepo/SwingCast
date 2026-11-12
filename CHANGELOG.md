@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1-alpha
+
+- Now also released on Wago.
+
 ## 0.3.0-alpha
 
 - Font: choose the font of the cast time and the swing seconds (the fonts every client has) and its size, in the options window or with `/swc font <7-20>`.

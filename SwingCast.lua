@@ -134,13 +134,18 @@ local function castRefresh()
 	end
 end
 
+-- Runs every frame while the cast bar is shown: only touch the label when the shown
+-- tenth of a second changes.
+local shownTenths
 local function castOnUpdate()
-	if not (db.time and castEnd) then
-		timeText:SetText("")
-		return
+	local tenths
+	if db.time and castEnd then
+		local left = castEnd - GetTime()
+		if left > 0 then tenths = math.floor(left * 10 + 0.5) end
 	end
-	local left = castEnd - GetTime()
-	timeText:SetText(left > 0 and string.format("%.1f", left) or "")
+	if tenths == shownTenths then return end
+	shownTenths = tenths
+	timeText:SetText(tenths and string.format("%.1f", tenths / 10) or "")
 end
 
 local function setupCastBar()
@@ -259,6 +264,7 @@ end
 
 local driver = CreateFrame("Frame")
 driver:SetScript("OnUpdate", function(_, elapsed)
+	if #strips == 0 then return end
 	local now = GetTime()
 	if testUntil and now > testUntil then testUntil = nil end
 	sinceQueue = sinceQueue + elapsed
@@ -271,7 +277,7 @@ driver:SetScript("OnUpdate", function(_, elapsed)
 			for _, s in ipairs(strips) do s.bar:SetStatusBarColor(r, g, b) end
 		end
 	end
-	for _, s in ipairs(strips) do safeUpdate(s, now) end
+	for i = 1, #strips do safeUpdate(strips[i], now) end
 end)
 
 local function makeStrip(native)
@@ -488,13 +494,14 @@ SLASH_SWINGCAST1 = "/swc"
 SLASH_SWINGCAST2 = "/swingcast"
 SlashCmdList.SWINGCAST = function(msg)
 	local cmd, arg = strsplit(" ", strtrim(msg or ""):lower(), 2)
+	local num = tonumber(arg)
 	local key = KEY[cmd or ""]
 	if key then
 		db[key] = not db[key]
 		P(TOGGLES[key] .. ": " .. (db[key] and "on" or "off"))
 		applyNativeLook()
-	elseif cmd == "height" and tonumber(arg) then
-		db.height = math.min(math.max(math.floor(tonumber(arg)), 2), 20)
+	elseif cmd == "height" and num then
+		db.height = math.min(math.max(math.floor(num), 2), 20)
 		layoutStrips()
 		P("swing strip height: " .. db.height)
 	elseif cmd == "test" then
@@ -508,8 +515,8 @@ SlashCmdList.SWINGCAST = function(msg)
 		else
 			P("/swc color swing|queued|cleave|latency|reset")
 		end
-	elseif cmd == "font" and tonumber(arg) then
-		db.fontSize = math.min(math.max(math.floor(tonumber(arg)), 7), 20)
+	elseif cmd == "font" and num then
+		db.fontSize = math.min(math.max(math.floor(num), 7), 20)
 		applyLook()
 		P("font size: " .. db.fontSize)
 	elseif cmd == "options" or cmd == "config" then
@@ -563,6 +570,6 @@ loader:SetScript("OnEvent", function(_, event, name)
 	elseif event == "PLAYER_LOGIN" then
 		setupCastBar()
 		local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_SwingTimer")
-		if loaded or _G.SwingTimerMainHandFrame then setupSwing() end
+		if loaded or SwingTimerMainHandFrame then setupSwing() end
 	end
 end)

@@ -58,7 +58,7 @@ local function P(msg) print("|cff7fbf3fSwingCast:|r " .. msg) end
 
 ---------------------------------------------------------------- cast bar
 local icon, timeText, lagTex
-local castEnd, castChannel
+local castEnd
 
 local function castInfo()
 	local name, _, tex, startMS, endMS = UnitCastingInfo("player")
@@ -74,7 +74,7 @@ local function castRefresh()
 		lagTex:Hide()
 		return
 	end
-	castEnd, castChannel = endMS / 1000, channel
+	castEnd = endMS / 1000
 
 	icon:SetTexture(tex)
 	icon:SetShown(db.icon)

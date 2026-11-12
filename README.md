@@ -48,6 +48,10 @@ Everything above is also available as a command. `/swc` lists the settings, each
 
 `/swc options` opens the options window, `/swc minimap` hides or shows the minimap button, `/swc height <2-20>` sets the strip height, `/swc font <7-20>` the font size, `/swc color swing|queued|cleave|latency|reset` opens the colour picker, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
 
+## Goes well with ProcFlare
+
+[ProcFlare](https://www.curseforge.com/wow/addons/procflare) by the same author: a big Clearcasting alert and small icons for weapon, trinket and talent procs. Omen of Clarity and Maul on one screen.
+
 ## AI disclosure
 
 The code was written with the help of an AI assistant (Claude). Bencepo designed the features, tests everything in game and maintains the addon.

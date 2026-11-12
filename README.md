@@ -33,6 +33,10 @@ Options > AddOns > SwingCast: every switch, strip height, font and font size, an
 
 `/swc options` opens the options window, `/swc minimap` hides or shows the minimap button, `/swc height <2-20>` sets the strip height, `/swc font <7-20>` the font size, `/swc color swing|queued|cleave|latency|reset` opens the colour picker, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
 
+## AI disclosure
+
+The code was written with the help of an AI assistant (Claude). Bencepo designed the features, tests everything in game and maintains the addon.
+
 ## License
 
 All rights reserved, see [LICENSE](LICENSE).

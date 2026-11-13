@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- With the swing strip switched off, SwingCast no longer does any work each frame.
+
 ## 0.4.1
 
 - The cast time label is only redrawn when the shown value changes, not every frame.

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.4
+
+- Brighter icon that stays readable on the round minimap button.
+
 ## 0.4.3
 
 - New icon: a blazing weapon swing above a cast bar, for the minimap button and the addon list.

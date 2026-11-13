@@ -263,10 +263,20 @@ local function safeUpdate(s, now)
 end
 
 local driver = CreateFrame("Frame")
+local barsHidden = false
 driver:SetScript("OnUpdate", function(_, elapsed)
 	if #strips == 0 then return end
 	local now = GetTime()
 	if testUntil and now > testUntil then testUntil = nil end
+	-- swing strip switched off: hide the bars once, then nothing to do each frame
+	if not (db.swing or testUntil) then
+		if not barsHidden then
+			for i = 1, #strips do strips[i].bar:Hide() end
+			barsHidden = true
+		end
+		return
+	end
+	barsHidden = false
 	sinceQueue = sinceQueue + elapsed
 	if sinceQueue >= 0.05 then
 		sinceQueue = 0

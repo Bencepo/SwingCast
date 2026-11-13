@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+
+- New icon: a blazing weapon swing above a cast bar, for the minimap button and the addon list.
+
 ## 0.4.2
 
 - With the swing strip switched off, SwingCast no longer does any work each frame.

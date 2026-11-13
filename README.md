@@ -2,6 +2,8 @@
 
 A small addon for WoW Forever that adds to the standard player cast bar instead of replacing it.
 
+**Website and live demo:** https://bencepo.github.io/swingcast/
+
 - **Spell icon** left of the cast bar
 - **Remaining cast time** on the bar
 - **Latency zone** at the end of the bar: once the bar reaches it, the next spell can be pressed
@@ -48,9 +50,15 @@ Everything above is also available as a command. `/swc` lists the settings, each
 
 `/swc options` opens the options window, `/swc minimap` hides or shows the minimap button, `/swc height <2-20>` sets the strip height, `/swc font <7-20>` the font size, `/swc color swing|queued|cleave|latency|reset` opens the colour picker, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
 
-## Goes well with ProcFlare
 
-[ProcFlare](https://www.curseforge.com/wow/addons/procflare) by the same author: a big Clearcasting alert and small icons for weapon, trinket and talent procs. Omen of Clarity and Maul on one screen.
+## More addons by Bencepo
+
+All addons, live demos and the web pages: **https://bencepo.github.io**
+
+- [LevelTrail](https://bencepo.github.io/leveltrail/): records your leveling run; the page shows splits, XP sources, deaths, records and a share image.
+- [VendorFloor](https://bencepo.github.io/vendorfloor/): auction house sniper for finds below vendor price, below disenchant value and profitable crafts.
+- [ProcFlare](https://bencepo.github.io/procflare/): big Clearcasting alert and small icons for weapon, trinket and talent procs, with melee and caster sound packs.
+- [StatTrim](https://bencepo.github.io/stattrim/): hide, merge and reorder stats right inside the character window.
 
 ## AI disclosure
 

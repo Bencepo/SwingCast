@@ -55,6 +55,8 @@ Everything above is also available as a command. `/swc` lists the settings, each
 
 All addons, live demos and the web pages: **https://bencepo.github.io**
 
+Like the addons? Support them on Ko-fi: **https://ko-fi.com/bencepo**
+
 - [LevelTrail](https://bencepo.github.io/leveltrail/): records your leveling run; the page shows splits, XP sources, deaths, records and a share image.
 - [VendorFloor](https://bencepo.github.io/vendorfloor/): auction house sniper for finds below vendor price, below disenchant value and profitable crafts.
 - [ProcFlare](https://bencepo.github.io/procflare/): big Clearcasting alert and small icons for weapon, trinket and talent procs, with melee and caster sound packs.

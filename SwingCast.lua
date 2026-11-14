@@ -2,7 +2,7 @@
 -- Copyright (c) 2026 Bencepo. All rights reserved.
 --
 -- Adds to the standard player cast bar instead of replacing it:
---   * spell icon left of the bar
+--   * spell icon inside the bar (or left of it)
 --   * remaining cast time on the bar
 --   * latency zone at the end of the bar (red: what the server still needs)
 --   * the swing timer as a thin strip right under the bar
@@ -17,7 +17,8 @@
 local ADDON = ...
 
 local DEFAULTS = {
-	icon = true,       -- spell icon left of the cast bar
+	icon = true,       -- spell icon on the cast bar
+	iconInside = true, -- icon inside the bar; off: left of it (needs room there)
 	time = true,       -- remaining cast time on the cast bar
 	latency = true,    -- latency zone at the end of the cast bar
 	swing = true,      -- swing strip under the cast bar
@@ -79,6 +80,7 @@ local queueList = QUEUE[playerClass]
 local db
 local castBar -- the standard player cast bar
 local applyLook -- font and colours, defined with the swing strips
+local applyIcon -- icon size and place, defined with the cast bar
 
 local function P(msg) print("|cff7fbf3fSwingCast:|r " .. msg) end
 
@@ -151,6 +153,51 @@ local function castOnUpdate()
 	timeText:SetText(tenths and string.format("%.1f", tenths / 10) or "")
 end
 
+-- Edit Mode's box around the cast bar: widened to the left while the icon sits
+-- outside the bar, so the room the icon needs is visible while placing the bar.
+local selPoints
+local function applySelection()
+	local sel = castBar and castBar.Selection
+	if not sel then return end
+	if not selPoints then
+		selPoints = {}
+		for i = 1, sel:GetNumPoints() do selPoints[i] = { sel:GetPoint(i) } end
+		if #selPoints == 0 then return end
+	end
+	local extra = 0
+	if db.icon and not db.iconInside then extra = icon:GetWidth() + 5 end
+	sel:ClearAllPoints()
+	for _, pt in ipairs(selPoints) do
+		local x = pt[4] or 0
+		if pt[1]:find("LEFT") then x = x - extra end
+		sel:SetPoint(pt[1], pt[2], pt[3], x, pt[5] or 0)
+	end
+end
+
+local editModeOpen = false
+applyIcon = function()
+	if not icon then return end
+	local h = math.max(castBar:GetHeight(), 10)
+	icon:ClearAllPoints()
+	if db.iconInside then
+		icon:SetSize(h, h)
+		icon:SetPoint("LEFT", castBar, "LEFT", 0, 0)
+	else
+		icon:SetSize(h + 6, h + 6)
+		icon:SetPoint("RIGHT", castBar, "LEFT", -5, 0)
+	end
+	-- in Edit Mode the bar shows without a cast: show a placeholder icon there
+	if editModeOpen and not castEnd then
+		icon:SetTexture(134400)
+		icon:SetShown(db.icon)
+	elseif not castEnd then
+		icon:Hide()
+	else
+		icon:SetShown(db.icon)
+	end
+	applySelection()
+end
+
 local function setupCastBar()
 	castBar = PlayerCastingBarFrame or CastingBarFrame
 	if not castBar then
@@ -158,12 +205,10 @@ local function setupCastBar()
 		return
 	end
 
-	local h = math.max(castBar:GetHeight(), 10)
-	icon = castBar:CreateTexture(nil, "OVERLAY")
-	icon:SetSize(h + 6, h + 6)
-	icon:SetPoint("RIGHT", castBar, "LEFT", -5, 0)
+	icon = castBar:CreateTexture(nil, "OVERLAY", nil, 7)
 	icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 	icon:Hide()
+	applyIcon()
 
 	timeText = castBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	timeText:SetPoint("RIGHT", castBar, "RIGHT", -4, 0)
@@ -359,11 +404,11 @@ end
 -- The game's Edit Mode: the strip shows up there and can be dragged like the game's frames.
 local function hookEditMode()
 	if EventRegistry and EventRegistry.RegisterCallback then
-		EventRegistry:RegisterCallback("EditMode.Enter", function() unlock("editmode") end, mover)
-		EventRegistry:RegisterCallback("EditMode.Exit", function() if unlocked == "editmode" then lock() end end, mover)
+		EventRegistry:RegisterCallback("EditMode.Enter", function() editModeOpen = true; applyIcon(); unlock("editmode") end, mover)
+		EventRegistry:RegisterCallback("EditMode.Exit", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end end, mover)
 	elseif EditModeManagerFrame then
-		hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() unlock("editmode") end)
-		hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() if unlocked == "editmode" then lock() end end)
+		hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() editModeOpen = true; applyIcon(); unlock("editmode") end)
+		hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end end)
 	end
 end
 
@@ -568,6 +613,7 @@ local function setToggle(key, value)
 	db[key] = value
 	if key == "swing" or key == "hideNative" then applyNativeLook()
 	elseif key == "attach" then layoutStrips()
+	elseif key == "icon" or key == "iconInside" then applyIcon()
 	elseif key == "showMinimap" then applyMinimap()
 	end
 	refreshOptions()
@@ -704,16 +750,17 @@ local function buildWindow()
 	-- left column: switches
 	local L = 16
 	header(win, L, -46, "Cast bar")
-	checkbox(win, L, -64, "icon", "Spell icon", "Show the spell icon left of the cast bar.")
-	checkbox(win, L, -88, "time", "Cast time", "Show the remaining cast time on the cast bar.")
-	checkbox(win, L, -112, "latency", "Latency zone", "Zone at the end of the cast bar: once the bar reaches it, the next spell can be pressed.")
-	header(win, L, -146, "Swing strip")
-	checkbox(win, L, -164, "swing", "Swing strip", "Swing timer as a thin strip under the cast bar.")
-	checkbox(win, L, -188, "swingText", "Swing seconds", "Seconds to the next swing on the strip.")
-	checkbox(win, L, -212, "hideNative", "Hide built-in swing bars", "Hide the look of Forever's own swing timer bars while the strip is on.")
-	checkbox(win, L, -236, "attach", "Attach to cast bar", "Strip right under the cast bar. Off: its own position, set by dragging it (Move, or the game's Edit Mode).")
-	header(win, L, -270, "General")
-	checkbox(win, L, -288, "showMinimap", "Minimap button", "Show the SwingCast button at the minimap.")
+	checkbox(win, L, -64, "icon", "Spell icon", "Show the spell icon on the cast bar.")
+	checkbox(win, L, -88, "iconInside", "Icon inside the bar", "Icon at the left end inside the cast bar. Off: left of the bar; Edit Mode's box then includes the icon's room.")
+	checkbox(win, L, -112, "time", "Cast time", "Show the remaining cast time on the cast bar.")
+	checkbox(win, L, -136, "latency", "Latency zone", "Zone at the end of the cast bar: once the bar reaches it, the next spell can be pressed.")
+	header(win, L, -170, "Swing strip")
+	checkbox(win, L, -188, "swing", "Swing strip", "Swing timer as a thin strip under the cast bar.")
+	checkbox(win, L, -212, "swingText", "Swing seconds", "Seconds to the next swing on the strip.")
+	checkbox(win, L, -236, "hideNative", "Hide built-in swing bars", "Hide the look of Forever's own swing timer bars while the strip is on.")
+	checkbox(win, L, -260, "attach", "Attach to cast bar", "Strip right under the cast bar. Off: its own position, set by dragging it (Move, or the game's Edit Mode).")
+	header(win, L, -292, "General")
+	checkbox(win, L, -310, "showMinimap", "Minimap button", "Show the SwingCast button at the minimap.")
 
 	-- right column: sizes, font, colours
 	local R = 262
@@ -831,6 +878,7 @@ end
 ---------------------------------------------------------------- settings
 local TOGGLES = {
 	icon = "spell icon",
+	iconInside = "spell icon inside the cast bar",
 	time = "cast time",
 	latency = "latency zone",
 	swing = "swing strip",
@@ -838,7 +886,7 @@ local TOGGLES = {
 	hideNative = "hide the built-in swing bars",
 	attach = "swing strip attached to the cast bar",
 }
-local ORDER = { "icon", "time", "latency", "swing", "swingText", "hideNative", "attach" }
+local ORDER = { "icon", "iconInside", "time", "latency", "swing", "swingText", "hideNative", "attach" }
 local KEY = {} -- lower-case command -> setting key, so /swc swingtext works too
 for _, k in ipairs(ORDER) do KEY[k:lower()] = k end
 
@@ -893,6 +941,7 @@ SlashCmdList.SWINGCAST = function(msg)
 		db.pos = nil
 		db.colors = CopyTable(DEFAULT_COLORS)
 		applyLook()
+		applyIcon()
 		layoutStrips()
 		applyNativeLook()
 		applyMinimap()

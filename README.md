@@ -4,7 +4,7 @@ A small addon for WoW Forever that adds to the standard player cast bar instead 
 
 **Website and live demo:** https://bencepo.github.io/swingcast/
 
-- **Spell icon** left of the cast bar
+- **Spell icon** inside the cast bar at its left end, or left of it
 - **Remaining cast time** on the bar
 - **Latency zone** at the end of the bar: once the bar reaches it, the next spell can be pressed
 - **Swing timer** as a thin strip right under the cast bar, with seconds to the next swing
@@ -44,6 +44,7 @@ Everything above is also available as a command. `/swc help` lists the settings,
 | Setting | |
 |---|---|
 | `icon` | spell icon |
+| `iconInside` | spell icon inside the cast bar (off: left of it) |
 | `time` | cast time |
 | `latency` | latency zone |
 | `swing` | swing strip |

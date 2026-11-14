@@ -55,6 +55,10 @@ Everything above is also available as a command. `/swc help` lists the settings,
 `/swc` opens the window, `/swc minimap` hides or shows the minimap button, `/swc unlock` lets you drag the swing strip anywhere (right-click or `/swc lock` to lock), `/swc width <60-600>` sets its width there, `/swc position reset` puts it back under the cast bar, `/swc height <2-20>` sets the strip height, `/swc font <7-20>` the font size, `/swc color swing|queued|cleave|latency|reset` opens the colour picker, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
 
 
+## Feedback and bug reports
+
+Found a bug or have an idea? [Open an issue](https://github.com/Bencepo/SwingCast/issues/new/choose), it takes a minute. For bugs the Lua error text (from BugSack, or `/console scriptErrors 1`) and your SwingCast version help the most. No GitHub account? Comment on [CurseForge](https://www.curseforge.com/wow/addons/swingcast#comments). Every report gets read.
+
 ## More addons by Bencepo
 
 All addons, live demos and the web pages: **https://bencepo.github.io**

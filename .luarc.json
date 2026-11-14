@@ -12,11 +12,15 @@
     "CastingBarFrame",
     "ColorPickerFrame",
     "CreateSettingsButtonInitializer",
+    "EditModeManagerFrame",
+    "EventRegistry",
     "IsCurrentSpell",
     "MinimalSliderWithSteppersMixin",
     "PlayerCastingBarFrame",
     "Settings",
+    "SettingsPanel",
     "SlashCmdList",
-    "SwingTimerMainHandFrame"
+    "SwingTimerMainHandFrame",
+    "UISpecialFrames"
   ]
 }

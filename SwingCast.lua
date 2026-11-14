@@ -207,6 +207,8 @@ local issecret = issecretvalue or function() return false end
 
 -- The strip's own position: a frame the player can drag, used when the strip is not
 -- attached to the cast bar or the cast bar cannot carry it (see castBarUsable).
+-- It is shown and draggable while unlocked (/swc unlock, options window) and while the
+-- game's Edit Mode is open.
 local mover = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
 mover:SetMovable(true)
 mover:SetClampedToScreen(true)
@@ -214,12 +216,10 @@ mover:SetFrameStrata("HIGH")
 mover:EnableMouse(false)
 mover:RegisterForDrag("LeftButton")
 mover:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
-mover:SetBackdropColor(0.25, 0.75, 0.25, 0.35)
-mover:SetBackdropBorderColor(0.25, 0.75, 0.25, 1)
 local moverLabel = mover:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 moverLabel:SetPoint("BOTTOM", mover, "TOP", 0, 4)
-moverLabel:SetText("SwingCast: drag to move, right-click to lock")
-local unlocked = false
+local unlocked -- nil, "manual" or "editmode"
+local optionsShown = false -- the options window is open: the strip shows a preview
 
 local function placeMover()
 	mover:ClearAllPoints()
@@ -244,10 +244,12 @@ end
 local function layoutStrips()
 	if #strips == 0 then return end
 	local n = #strips
-	mover:SetSize(db.width, n * db.height + (n - 1) * 2)
-	placeMover()
 	local onCastBar = db.attach and castBarOk
 	local anchor, first = onCastBar and castBar or mover, true
+	if not onCastBar then
+		mover:SetSize(db.width, n * db.height + (n - 1) * 2)
+		placeMover()
+	end
 	for _, s in ipairs(strips) do
 		s.bar:ClearAllPoints()
 		s.bar:SetHeight(db.height)
@@ -258,50 +260,85 @@ local function layoutStrips()
 		s.bar:SetPoint("TOPRIGHT", anchor, from .. "RIGHT", 0, gap)
 		anchor, first = s.bar, false
 	end
+	-- attached: the (unlocked) frame lies over the strip, so Edit Mode can show and grab it
+	if onCastBar then
+		mover:ClearAllPoints()
+		mover:SetPoint("TOPLEFT", strips[1].bar, "TOPLEFT")
+		mover:SetPoint("BOTTOMRIGHT", strips[n].bar, "BOTTOMRIGHT")
+	end
+end
+
+-- The preview runs while the strip is unlocked or the options window is open.
+local function updatePreview()
+	testUntil = (unlocked or optionsShown) and math.huge or nil
+end
+
+local refreshOptions = function() end -- set by the options window
+
+-- Takes the strip off the cast bar, starting exactly where it is now.
+local function detach()
+	if not db.attach then return end
+	local b = strips[1] and strips[1].bar
+	if castBarOk and b and b:GetLeft() then
+		db.width = math.min(math.max(math.floor(b:GetWidth() + 0.5), WIDTH_MIN), WIDTH_MAX)
+		db.pos = { "TOPLEFT", "BOTTOMLEFT", b:GetLeft(), b:GetTop() }
+	end
+	db.attach = false
+	layoutStrips()
+	refreshOptions()
 end
 
 local function lock()
 	if not unlocked then return end
-	unlocked = false
+	unlocked = nil
 	mover:EnableMouse(false)
 	mover:SetBackdropColor(0, 0, 0, 0)
 	mover:SetBackdropBorderColor(0, 0, 0, 0)
 	moverLabel:Hide()
-	testUntil = nil
+	updatePreview()
+	refreshOptions()
 end
 
--- Unlocking takes the strip off the cast bar, starting exactly where it is now.
-local function unlock()
+-- how: "manual" (/swc unlock, options window) takes the strip off the cast bar at once;
+-- "editmode" leaves it attached until it is actually dragged, like the game's own frames.
+local function unlock(how)
 	if #strips == 0 then
-		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
+		if how ~= "editmode" then
+			P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
+		end
 		return
 	end
-	if db.attach then
-		local b = strips[1].bar
-		if castBarOk and b:GetLeft() then
-			db.width = math.min(math.max(math.floor(b:GetWidth() + 0.5), WIDTH_MIN), WIDTH_MAX)
-			db.pos = { "TOPLEFT", "BOTTOMLEFT", b:GetLeft(), b:GetTop() }
-		end
-		db.attach = false
-	end
-	unlocked = true
+	if how == "manual" then detach() end
+	unlocked = how
 	layoutStrips()
 	mover:EnableMouse(true)
-	mover:SetBackdropColor(0.25, 0.75, 0.25, 0.35)
-	mover:SetBackdropBorderColor(0.25, 0.75, 0.25, 1)
+	if how == "editmode" then
+		-- the look of Edit Mode's own frames: blue, with the name
+		mover:SetBackdropColor(0.25, 0.55, 1, 0.3)
+		mover:SetBackdropBorderColor(0.35, 0.65, 1, 1)
+		moverLabel:SetText("SwingCast")
+	else
+		mover:SetBackdropColor(0.25, 0.75, 0.25, 0.35)
+		mover:SetBackdropBorderColor(0.25, 0.75, 0.25, 1)
+		moverLabel:SetText("SwingCast: drag to move, right-click to lock")
+		P("swing strip unlocked: drag it, right-click it or /swc lock to lock.")
+	end
 	moverLabel:Show()
-	testUntil = math.huge
-	P("swing strip unlocked: drag it, right-click it or /swc lock to lock.")
+	updatePreview()
+	refreshOptions()
 end
 
-mover:SetScript("OnDragStart", function(self) self:StartMoving() end)
+mover:SetScript("OnDragStart", function(self)
+	detach()
+	self:StartMoving()
+end)
 mover:SetScript("OnDragStop", function(self)
 	self:StopMovingOrSizing()
 	db.pos = { "TOPLEFT", "BOTTOMLEFT", self:GetLeft(), self:GetTop() }
 	placeMover()
 end)
 mover:SetScript("OnMouseUp", function(_, button)
-	if button == "RightButton" then
+	if button == "RightButton" and unlocked == "manual" then
 		lock()
 		P("swing strip locked.")
 	end
@@ -312,11 +349,22 @@ mover:SetBackdropBorderColor(0, 0, 0, 0)
 moverLabel:Hide()
 
 local function resetPosition()
-	lock()
 	db.pos = nil
 	db.attach = true
 	db.width = DEFAULTS.width
 	layoutStrips()
+	refreshOptions()
+end
+
+-- The game's Edit Mode: the strip shows up there and can be dragged like the game's frames.
+local function hookEditMode()
+	if EventRegistry and EventRegistry.RegisterCallback then
+		EventRegistry:RegisterCallback("EditMode.Enter", function() unlock("editmode") end, mover)
+		EventRegistry:RegisterCallback("EditMode.Exit", function() if unlocked == "editmode" then lock() end end, mover)
+	elseif EditModeManagerFrame then
+		hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() unlock("editmode") end)
+		hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() if unlocked == "editmode" then lock() end end)
+	end
 end
 
 -- Checked once a second: the cast bar may get its place late (layouts load after
@@ -331,7 +379,7 @@ local function checkCastBar()
 	end
 	if not ok and db.attach and not hinted and #strips > 0 and loginTime and GetTime() - loginTime > 5 then
 		hinted = true
-		P("the standard cast bar is hidden or replaced by another addon, so the swing strip uses its own position. /swc unlock to move it.")
+		P("the standard cast bar is hidden or replaced by another addon, so the swing strip uses its own position. /swc unlock or Edit Mode to move it.")
 	end
 end
 
@@ -474,16 +522,7 @@ local function setupSwing()
 end
 
 ---------------------------------------------------------------- options window, minimap button
-local category
 local LDBIcon
-
-local function openOptions()
-	if category and Settings and Settings.OpenToCategory then
-		Settings.OpenToCategory(category:GetID())
-	else
-		SlashCmdList.SWINGCAST("")
-	end
-end
 
 local function applyMinimap()
 	if not LDBIcon then return end
@@ -497,6 +536,7 @@ local function pickColor(key)
 	local function set(nr, ng, nb)
 		db.colors[key] = { nr, ng, nb }
 		applyLook()
+		refreshOptions()
 	end
 	local function swatch() set(ColorPickerFrame:GetColorRGB()) end
 	local function cancel() set(r, g, b) end
@@ -515,6 +555,7 @@ end
 local function resetColors()
 	db.colors = CopyTable(DEFAULT_COLORS)
 	applyLook()
+	refreshOptions()
 end
 
 local function startTest()
@@ -522,84 +563,240 @@ local function startTest()
 	P("8 s preview of the swing strip, the second half tinted as if Maul were queued.")
 end
 
+-- Changing a switch: store it and redraw what depends on it.
+local function setToggle(key, value)
+	db[key] = value
+	if key == "swing" or key == "hideNative" then applyNativeLook()
+	elseif key == "attach" then layoutStrips()
+	elseif key == "showMinimap" then applyMinimap()
+	end
+	refreshOptions()
+end
+
+-- Own window instead of a page in the game's options: it can be dragged anywhere and
+-- stays open while you play, so every change shows live on the cast bar and the strip.
+local win
+local widgets = {}
+
+local function tooltip(frame, title, text)
+	frame:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText(title, 1, 1, 1)
+		if text then GameTooltip:AddLine(text, nil, nil, nil, true) end
+		GameTooltip:Show()
+	end)
+	frame:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+local function header(parent, x, y, text)
+	local h = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	h:SetPoint("TOPLEFT", x, y)
+	h:SetText(text)
+end
+
+local function checkbox(parent, x, y, key, label, tip)
+	local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+	cb:SetSize(24, 24)
+	cb:SetPoint("TOPLEFT", x, y)
+	local t = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	t:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+	t:SetText(label)
+	cb:SetHitRectInsets(0, -(t:GetStringWidth() + 4), 0, 0)
+	cb:SetScript("OnClick", function(self) setToggle(key, self:GetChecked() and true or false) end)
+	tooltip(cb, label, tip)
+	widgets[#widgets + 1] = function() cb:SetChecked(db[key] and true or false) end
+end
+
+local function slider(parent, x, y, key, label, minV, maxV, step, onChange, tip)
+	local title = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	title:SetPoint("TOPLEFT", x, y)
+	title:SetText(label)
+	local s = CreateFrame("Slider", nil, parent, "BackdropTemplate")
+	s:SetOrientation("HORIZONTAL")
+	s:SetSize(170, 12)
+	s:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
+	s:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+	s:SetBackdropColor(0, 0, 0, 0.6)
+	s:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+	s:SetThumbTexture("Interface\\Buttons\\UI-SliderBar-Button-Horizontal")
+	s:SetMinMaxValues(minV, maxV)
+	s:SetValueStep(step)
+	s:SetObeyStepOnDrag(true)
+	local val = s:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	val:SetPoint("LEFT", s, "RIGHT", 8, 0)
+	local syncing = false
+	s:SetScript("OnValueChanged", function(_, v)
+		v = math.floor(v / step + 0.5) * step
+		val:SetText(v)
+		if syncing or v == db[key] then return end
+		db[key] = v
+		onChange()
+	end)
+	s:EnableMouseWheel(true)
+	s:SetScript("OnMouseWheel", function(self, delta)
+		self:SetValue(math.min(math.max(self:GetValue() + delta * step, minV), maxV))
+	end)
+	tooltip(s, label, tip)
+	widgets[#widgets + 1] = function()
+		syncing = true
+		s:SetValue(db[key])
+		val:SetText(db[key])
+		syncing = false
+	end
+end
+
+local function makeButton(parent, text, width, onClick, tip)
+	local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+	b:SetSize(width, 22)
+	b:SetText(text)
+	b:SetScript("OnClick", onClick)
+	if tip then tooltip(b, text, tip) end
+	return b
+end
+
+local function fontLabel()
+	for _, f in ipairs(FONTS) do
+		if f.key == db.font then return f.label end
+	end
+	return FONTS[1].label
+end
+
+local function buildWindow()
+	win = CreateFrame("Frame", "SwingCastOptionsFrame", UIParent, "BackdropTemplate")
+	win:SetSize(500, 470)
+	win:SetFrameStrata("DIALOG")
+	win:SetToplevel(true)
+	win:SetClampedToScreen(true)
+	win:SetMovable(true)
+	win:EnableMouse(true)
+	win:RegisterForDrag("LeftButton")
+	win:SetBackdrop({
+		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile = true, tileSize = 16, edgeSize = 16,
+		insets = { left = 4, right = 4, top = 4, bottom = 4 },
+	})
+	win:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+	win:SetScript("OnDragStart", win.StartMoving)
+	win:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		db.optPos = { "TOPLEFT", "BOTTOMLEFT", self:GetLeft(), self:GetTop() }
+	end)
+	local p = db.optPos
+	if type(p) == "table" and p[1] then
+		win:SetPoint(p[1], UIParent, p[2], p[3], p[4])
+	else
+		win:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+	end
+	-- Escape closes it like the game's windows
+	tinsert(UISpecialFrames, "SwingCastOptionsFrame")
+
+	local title = win:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	title:SetPoint("TOPLEFT", 16, -14)
+	local version = C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Version")
+	title:SetText(ADDON .. ((version and not version:find("@")) and ("  |cff999999" .. version .. "|r") or ""))
+	local hint = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	hint:SetPoint("TOPRIGHT", -36, -18)
+	hint:SetText("drag to move, changes apply live")
+	local close = CreateFrame("Button", nil, win, "UIPanelCloseButton")
+	close:SetPoint("TOPRIGHT", -2, -2)
+
+	-- left column: switches
+	local L = 16
+	header(win, L, -46, "Cast bar")
+	checkbox(win, L, -64, "icon", "Spell icon", "Show the spell icon left of the cast bar.")
+	checkbox(win, L, -88, "time", "Cast time", "Show the remaining cast time on the cast bar.")
+	checkbox(win, L, -112, "latency", "Latency zone", "Zone at the end of the cast bar: once the bar reaches it, the next spell can be pressed.")
+	header(win, L, -146, "Swing strip")
+	checkbox(win, L, -164, "swing", "Swing strip", "Swing timer as a thin strip under the cast bar.")
+	checkbox(win, L, -188, "swingText", "Swing seconds", "Seconds to the next swing on the strip.")
+	checkbox(win, L, -212, "hideNative", "Hide built-in swing bars", "Hide the look of Forever's own swing timer bars while the strip is on.")
+	checkbox(win, L, -236, "attach", "Attach to cast bar", "Strip right under the cast bar. Off: its own position, set by dragging it (Move, or the game's Edit Mode).")
+	header(win, L, -270, "General")
+	checkbox(win, L, -288, "showMinimap", "Minimap button", "Show the SwingCast button at the minimap.")
+
+	-- right column: sizes, font, colours
+	local R = 262
+	header(win, R, -46, "Size and font")
+	slider(win, R, -68, "height", "Strip height", 2, 20, 1, layoutStrips, "Height of the swing strip in pixels.")
+	slider(win, R, -106, "width", "Strip width (own position)", WIDTH_MIN, WIDTH_MAX, 5, layoutStrips,
+		"Width of the strip at its own position. Under the cast bar it takes the cast bar's width.")
+	slider(win, R, -144, "fontSize", "Font size", 7, 20, 1, applyLook, "Size of the cast time. The swing seconds are 2 smaller.")
+	local fontBtn = makeButton(win, "", 200, function()
+		local i = 1
+		for n, f in ipairs(FONTS) do if f.key == db.font then i = n end end
+		db.font = FONTS[i % #FONTS + 1].key
+		applyLook()
+		refreshOptions()
+	end, "Click to switch the font of the cast time and the swing seconds.")
+	fontBtn:SetPoint("TOPLEFT", R, -184)
+	widgets[#widgets + 1] = function() fontBtn:SetText("Font: " .. fontLabel()) end
+
+	header(win, R, -222, "Colours")
+	for i, c in ipairs(COLOR_LABELS) do
+		local key = c[1]
+		local sw = CreateFrame("Button", nil, win, "BackdropTemplate")
+		sw:SetSize(18, 18)
+		sw:SetPoint("TOPLEFT", R, -240 - (i - 1) * 24)
+		sw:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+		sw:SetBackdropBorderColor(0.8, 0.8, 0.8, 1)
+		sw:SetScript("OnClick", function() pickColor(key) end)
+		tooltip(sw, c[2], c[3] .. " Click to choose.")
+		local t = win:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		t:SetPoint("LEFT", sw, "RIGHT", 8, 0)
+		t:SetText(c[2])
+		widgets[#widgets + 1] = function() sw:SetBackdropColor(color(key)) end
+	end
+	makeButton(win, "Default colours", 140, resetColors, "Set all colours back to the defaults."):SetPoint("TOPLEFT", R, -342)
+
+	-- bottom row: position
+	header(win, L, -378, "Position")
+	local move = makeButton(win, "Move strip", 110, function()
+		if unlocked then lock() else unlock("manual") end
+	end, "Takes the strip off the cast bar so you can drag it anywhere. Click again or right-click the strip to lock. The game's Edit Mode moves it too.")
+	move:SetPoint("TOPLEFT", L, -398)
+	widgets[#widgets + 1] = function() move:SetText(unlocked == "manual" and "Lock strip" or "Move strip") end
+	makeButton(win, "Default position", 130, resetPosition, "Put the strip back under the cast bar."):SetPoint("LEFT", move, "RIGHT", 8, 0)
+	makeButton(win, "Reset all", 100, function() SlashCmdList.SWINGCAST("reset") end, "All settings back to the defaults.")
+		:SetPoint("TOPRIGHT", -16, -398)
+	local note = win:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	note:SetPoint("BOTTOMLEFT", 16, 14)
+	note:SetPoint("BOTTOMRIGHT", -16, 14)
+	note:SetJustifyH("LEFT")
+	note:SetText("While this window is open the swing strip shows a preview. Needs the built-in swing timer: Options > Advanced Options > Swing Timer.")
+
+	refreshOptions = function()
+		if not (win and win:IsShown()) then return end
+		for _, w in ipairs(widgets) do w() end
+	end
+	win:SetScript("OnShow", function()
+		optionsShown = true
+		updatePreview()
+		refreshOptions()
+	end)
+	win:SetScript("OnHide", function()
+		optionsShown = false
+		updatePreview()
+	end)
+	win:Hide()
+end
+
+local function openOptions()
+	if not win then buildWindow() end
+	win:SetShown(not win:IsShown())
+end
+
+-- The game's options only point to the window, so the addon is still found there.
 local function registerSettings()
-	if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnSetting) then return end
-	local layout
-	category, layout = Settings.RegisterVerticalLayoutCategory(ADDON)
-	local function checkbox(key, label, tooltip, onChange)
-		local setting = Settings.RegisterAddOnSetting(category, "SWINGCAST_" .. key:upper(), key, db,
-			Settings.VarType.Boolean, label, DEFAULTS[key])
-		Settings.CreateCheckbox(category, setting, tooltip)
-		if onChange then setting:SetValueChangedCallback(onChange) end
-	end
-	checkbox("icon", "Spell icon", "Show the spell icon left of the cast bar.")
-	checkbox("time", "Cast time", "Show the remaining cast time on the cast bar.")
-	checkbox("latency", "Latency zone", "Red zone at the end of the cast bar: once the bar reaches it, the next spell can be pressed.")
-	checkbox("swing", "Swing strip", "Swing timer as a thin strip under the cast bar.", applyNativeLook)
-	checkbox("swingText", "Swing seconds", "Seconds to the next swing on the strip.")
-	checkbox("hideNative", "Hide the built-in swing bars", "Hide the look of Forever's own swing timer bars while the strip is on.", applyNativeLook)
-	checkbox("showMinimap", "Minimap button", "Show the SwingCast button at the minimap.", applyMinimap)
-
-	local height = Settings.RegisterAddOnSetting(category, "SWINGCAST_HEIGHT", "height", db,
-		Settings.VarType.Number, "Swing strip height", DEFAULTS.height)
-	local opts = Settings.CreateSliderOptions(2, 20, 1)
-	if MinimalSliderWithSteppersMixin and opts.SetLabelFormatter then
-		opts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
-	end
-	Settings.CreateSlider(category, height, opts, "Height of the swing strip in pixels.")
-	height:SetValueChangedCallback(function() layoutStrips() end)
-
-	-- Position: under the cast bar, or a place of its own that the player drags.
-	checkbox("attach", "Attach to cast bar", "Swing strip right under the cast bar. Off: the strip has its own position, set with \"Move swing strip\".",
-		function() lock(); layoutStrips() end)
-	local width = Settings.RegisterAddOnSetting(category, "SWINGCAST_WIDTH", "width", db,
-		Settings.VarType.Number, "Swing strip width", DEFAULTS.width)
-	local widthOpts = Settings.CreateSliderOptions(WIDTH_MIN, WIDTH_MAX, 5)
-	if MinimalSliderWithSteppersMixin and widthOpts.SetLabelFormatter then
-		widthOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
-	end
-	Settings.CreateSlider(category, width, widthOpts, "Width of the swing strip at its own position. Under the cast bar it takes the cast bar's width.")
-	width:SetValueChangedCallback(function() layoutStrips() end)
+	if not (Settings and Settings.RegisterVerticalLayoutCategory and Settings.RegisterAddOnCategory) then return end
+	local category, layout = Settings.RegisterVerticalLayoutCategory(ADDON)
 	if layout and CreateSettingsButtonInitializer then
-		layout:AddInitializer(CreateSettingsButtonInitializer("Move swing strip", "Unlock", function()
-			if SettingsPanel and SettingsPanel.IsShown and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
-			unlock()
-		end, "Takes the strip off the cast bar so you can drag it anywhere. Right-click it to lock.", true))
-		layout:AddInitializer(CreateSettingsButtonInitializer("Default position", "Reset", resetPosition,
-			"Put the strip back under the cast bar.", true))
+		layout:AddInitializer(CreateSettingsButtonInitializer("SwingCast has its own window", "Open", function()
+			if SettingsPanel and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
+			if not win then buildWindow() end
+			win:Show()
+		end, "Opens the SwingCast window. It can be dragged anywhere and stays open while you play.", true))
 	end
-
-	-- Font: a dropdown of the fonts every client has, and the size.
-	local dropdown = Settings.CreateDropdown or Settings.CreateDropDown
-	if dropdown and Settings.CreateControlTextContainer then
-		local font = Settings.RegisterAddOnSetting(category, "SWINGCAST_FONT", "font", db,
-			Settings.VarType.String, "Font", DEFAULTS.font)
-		dropdown(category, font, function()
-			local c = Settings.CreateControlTextContainer()
-			for _, f in ipairs(FONTS) do c:Add(f.key, f.label) end
-			return c:GetData()
-		end, "Font of the cast time and the swing seconds.")
-		font:SetValueChangedCallback(function() applyLook() end)
-	end
-	local size = Settings.RegisterAddOnSetting(category, "SWINGCAST_FONTSIZE", "fontSize", db,
-		Settings.VarType.Number, "Font size", DEFAULTS.fontSize)
-	local sizeOpts = Settings.CreateSliderOptions(7, 20, 1)
-	if MinimalSliderWithSteppersMixin and sizeOpts.SetLabelFormatter then
-		sizeOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
-	end
-	Settings.CreateSlider(category, size, sizeOpts, "Size of the cast time. The swing seconds are 2 smaller.")
-	size:SetValueChangedCallback(function() applyLook() end)
-
-	-- Colours: a button each that opens the game's colour picker.
-	if layout and CreateSettingsButtonInitializer then
-		for _, c in ipairs(COLOR_LABELS) do
-			local key = c[1]
-			layout:AddInitializer(CreateSettingsButtonInitializer(c[2], "Choose", function() pickColor(key) end, c[3], true))
-		end
-		layout:AddInitializer(CreateSettingsButtonInitializer("Default colours", "Reset", resetColors,
-			"Set all colours back to the defaults.", true))
-	end
-
 	Settings.RegisterAddOnCategory(category)
 end
 
@@ -652,12 +849,12 @@ SlashCmdList.SWINGCAST = function(msg)
 	local num = tonumber(arg)
 	local key = KEY[cmd or ""]
 	if key then
-		db[key] = not db[key]
+		setToggle(key, not db[key])
 		P(TOGGLES[key] .. ": " .. (db[key] and "on" or "off"))
-		applyNativeLook()
-		if key == "attach" then lock(); layoutStrips() end
+	elseif cmd == nil or cmd == "" or cmd == "options" or cmd == "config" then
+		openOptions()
 	elseif cmd == "unlock" or cmd == "move" then
-		unlock()
+		unlock("manual")
 	elseif cmd == "lock" then
 		lock()
 		P("swing strip locked.")
@@ -687,11 +884,8 @@ SlashCmdList.SWINGCAST = function(msg)
 		db.fontSize = math.min(math.max(math.floor(num), 7), 20)
 		applyLook()
 		P("font size: " .. db.fontSize)
-	elseif cmd == "options" or cmd == "config" then
-		openOptions()
 	elseif cmd == "minimap" then
-		db.showMinimap = not db.showMinimap
-		applyMinimap()
+		setToggle("showMinimap", not db.showMinimap)
 		P("minimap button: " .. (db.showMinimap and "on" or "off"))
 	elseif cmd == "reset" then
 		lock()
@@ -704,7 +898,7 @@ SlashCmdList.SWINGCAST = function(msg)
 		applyMinimap()
 		P("settings reset.")
 	else
-		P("/swc <setting> switches it on or off:")
+		P("/swc opens the window. /swc <setting> switches it on or off:")
 		for _, k in ipairs(ORDER) do
 			print(string.format("  %s - %s (%s)", k, TOGGLES[k], db[k] and "on" or "off"))
 		end
@@ -715,10 +909,11 @@ SlashCmdList.SWINGCAST = function(msg)
 		print("  test - 8 s preview of the swing strip")
 		print("  color swing|queued|cleave|latency - pick a colour, color reset - default colours")
 		print("  font <7-20> - font size")
-		print("  options - settings window")
+		print("  options - SwingCast window (same as /swc)")
 		print("  minimap - minimap button on or off")
 		print("  reset - default settings")
 	end
+	refreshOptions()
 end
 
 ---------------------------------------------------------------- start
@@ -743,6 +938,7 @@ loader:SetScript("OnEvent", function(_, event, name)
 	elseif event == "PLAYER_LOGIN" then
 		loginTime = GetTime()
 		setupCastBar()
+		hookEditMode()
 		local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_SwingTimer")
 		if loaded or SwingTimerMainHandFrame then setupSwing() end
 	end

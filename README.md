@@ -17,18 +17,19 @@ SwingCast mirrors Forever's built-in swing timer, so it has to be switched on:
 
 ## Settings
 
-Everything is set with buttons and sliders, no commands needed:
+Everything is set in SwingCast's own window, no commands needed. Drag it anywhere: it stays open while you play, so every change shows live, and the swing strip shows a preview meanwhile.
 
-- **Options > AddOns > SwingCast**
-- **Minimap button:** left-click opens the options, right-click shows an 8 s preview
+- **`/swc`**
+- **Minimap button:** left-click opens the window, right-click shows an 8 s preview
 - **Addon menu** next to the minimap, with the same clicks
+- **Options > AddOns > SwingCast** points to the window
 
 What you can change:
 
 - Show or hide spell icon, cast time, latency zone, swing strip and its seconds
 - Hide the built-in swing bars
 - Strip height
-- Position: under the cast bar, or anywhere you drag it ("Move swing strip", right-click to lock), with its own width
+- Position: under the cast bar, or anywhere you drag it: in the game's Edit Mode, or with "Move strip" in the window (right-click to lock), with its own width
 - Font and font size
 - Colours of the swing strip, the queued swing, Cleave and the latency zone (game colour picker, with reset)
 
@@ -38,7 +39,7 @@ The swing strip mirrors Forever's built-in swing timer (`Blizzard_SwingTimer`). 
 
 ## Advanced: chat commands
 
-Everything above is also available as a command. `/swc` lists the settings, each one is switched with `/swc <setting>`:
+Everything above is also available as a command. `/swc help` lists the settings, each one is switched with `/swc <setting>`:
 
 | Setting | |
 |---|---|
@@ -50,7 +51,7 @@ Everything above is also available as a command. `/swc` lists the settings, each
 | `hideNative` | hide the built-in swing bars |
 | `attach` | swing strip under the cast bar or at its own position |
 
-`/swc options` opens the options window, `/swc minimap` hides or shows the minimap button, `/swc unlock` lets you drag the swing strip anywhere (right-click or `/swc lock` to lock), `/swc width <60-600>` sets its width there, `/swc position reset` puts it back under the cast bar, `/swc height <2-20>` sets the strip height, `/swc font <7-20>` the font size, `/swc color swing|queued|cleave|latency|reset` opens the colour picker, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
+`/swc` opens the window, `/swc minimap` hides or shows the minimap button, `/swc unlock` lets you drag the swing strip anywhere (right-click or `/swc lock` to lock), `/swc width <60-600>` sets its width there, `/swc position reset` puts it back under the cast bar, `/swc height <2-20>` sets the strip height, `/swc font <7-20>` the font size, `/swc color swing|queued|cleave|latency|reset` opens the colour picker, `/swc test` shows an 8 s preview, `/swc reset` restores the defaults.
 
 
 ## More addons by Bencepo

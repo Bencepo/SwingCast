@@ -27,7 +27,10 @@ local DEFAULTS = {
 	showMinimap = true, -- minimap button
 	font = "FRIZQT",    -- font of the cast time and the swing seconds
 	fontSize = 10,      -- size of the cast time; the swing seconds are 2 smaller
+	attach = true,      -- swing strip under the cast bar; off: its own, movable position
+	width = 200,        -- width of the swing strip at its own position
 }
+local WIDTH_MIN, WIDTH_MAX = 60, 600
 
 -- Colours as { r, g, b }, kept in db.colors and changed in the options window.
 local DEFAULT_COLORS = {
@@ -201,20 +204,134 @@ local function queuedColor()
 end
 
 local issecret = issecretvalue or function() return false end
+
+-- The strip's own position: a frame the player can drag, used when the strip is not
+-- attached to the cast bar or the cast bar cannot carry it (see castBarUsable).
+local mover = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+mover:SetMovable(true)
+mover:SetClampedToScreen(true)
+mover:SetFrameStrata("HIGH")
+mover:EnableMouse(false)
+mover:RegisterForDrag("LeftButton")
+mover:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+mover:SetBackdropColor(0.25, 0.75, 0.25, 0.35)
+mover:SetBackdropBorderColor(0.25, 0.75, 0.25, 1)
+local moverLabel = mover:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+moverLabel:SetPoint("BOTTOM", mover, "TOP", 0, 4)
+moverLabel:SetText("SwingCast: drag to move, right-click to lock")
+local unlocked = false
+
+local function placeMover()
+	mover:ClearAllPoints()
+	local p = db.pos
+	if type(p) == "table" and p[1] then
+		mover:SetPoint(p[1], UIParent, p[2], p[3], p[4])
+	else
+		mover:SetPoint("CENTER", UIParent, "CENTER", 0, -180)
+	end
+end
+
+-- The cast bar can only carry the strip while it has a place on the screen and is the
+-- one that shows casts. Another cast bar or unit frame addon may hide it, take its
+-- events away or park it somewhere; then the strip uses its own position.
+local castBarOk = false
+local function castBarUsable()
+	if not castBar or castBar:GetLeft() == nil then return false end
+	if castBar.IsEventRegistered and not castBar:IsEventRegistered("UNIT_SPELLCAST_START") then return false end
+	return true
+end
+
 local function layoutStrips()
-	local anchor, first = castBar, true
+	if #strips == 0 then return end
+	local n = #strips
+	mover:SetSize(db.width, n * db.height + (n - 1) * 2)
+	placeMover()
+	local onCastBar = db.attach and castBarOk
+	local anchor, first = onCastBar and castBar or mover, true
 	for _, s in ipairs(strips) do
 		s.bar:ClearAllPoints()
 		s.bar:SetHeight(db.height)
 		s.spark:SetHeight(db.height * 2.5)
-		if anchor then
-			s.bar:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, first and -4 or -2)
-			s.bar:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, first and -4 or -2)
-		else
-			s.bar:SetPoint("CENTER", UIParent, "CENTER", 0, -180)
-			s.bar:SetWidth(200)
-		end
+		local from = (first and not onCastBar) and "TOP" or "BOTTOM"
+		local gap = first and (onCastBar and -4 or 0) or -2
+		s.bar:SetPoint("TOPLEFT", anchor, from .. "LEFT", 0, gap)
+		s.bar:SetPoint("TOPRIGHT", anchor, from .. "RIGHT", 0, gap)
 		anchor, first = s.bar, false
+	end
+end
+
+local function lock()
+	if not unlocked then return end
+	unlocked = false
+	mover:EnableMouse(false)
+	mover:SetBackdropColor(0, 0, 0, 0)
+	mover:SetBackdropBorderColor(0, 0, 0, 0)
+	moverLabel:Hide()
+	testUntil = nil
+end
+
+-- Unlocking takes the strip off the cast bar, starting exactly where it is now.
+local function unlock()
+	if #strips == 0 then
+		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
+		return
+	end
+	if db.attach then
+		local b = strips[1].bar
+		if castBarOk and b:GetLeft() then
+			db.width = math.min(math.max(math.floor(b:GetWidth() + 0.5), WIDTH_MIN), WIDTH_MAX)
+			db.pos = { "TOPLEFT", "BOTTOMLEFT", b:GetLeft(), b:GetTop() }
+		end
+		db.attach = false
+	end
+	unlocked = true
+	layoutStrips()
+	mover:EnableMouse(true)
+	mover:SetBackdropColor(0.25, 0.75, 0.25, 0.35)
+	mover:SetBackdropBorderColor(0.25, 0.75, 0.25, 1)
+	moverLabel:Show()
+	testUntil = math.huge
+	P("swing strip unlocked: drag it, right-click it or /swc lock to lock.")
+end
+
+mover:SetScript("OnDragStart", function(self) self:StartMoving() end)
+mover:SetScript("OnDragStop", function(self)
+	self:StopMovingOrSizing()
+	db.pos = { "TOPLEFT", "BOTTOMLEFT", self:GetLeft(), self:GetTop() }
+	placeMover()
+end)
+mover:SetScript("OnMouseUp", function(_, button)
+	if button == "RightButton" then
+		lock()
+		P("swing strip locked.")
+	end
+end)
+-- locked at start: the frame stays invisible and lets clicks through
+mover:SetBackdropColor(0, 0, 0, 0)
+mover:SetBackdropBorderColor(0, 0, 0, 0)
+moverLabel:Hide()
+
+local function resetPosition()
+	lock()
+	db.pos = nil
+	db.attach = true
+	db.width = DEFAULTS.width
+	layoutStrips()
+end
+
+-- Checked once a second: the cast bar may get its place late (layouts load after
+-- login) or lose it to another addon later on.
+local loginTime
+local hinted = false
+local function checkCastBar()
+	local ok = castBarUsable()
+	if ok ~= castBarOk then
+		castBarOk = ok
+		layoutStrips()
+	end
+	if not ok and db.attach and not hinted and #strips > 0 and loginTime and GetTime() - loginTime > 5 then
+		hinted = true
+		P("the standard cast bar is hidden or replaced by another addon, so the swing strip uses its own position. /swc unlock to move it.")
 	end
 end
 
@@ -264,8 +381,14 @@ end
 
 local driver = CreateFrame("Frame")
 local barsHidden = false
+local sinceCheck = 0
 driver:SetScript("OnUpdate", function(_, elapsed)
 	if #strips == 0 then return end
+	sinceCheck = sinceCheck + elapsed
+	if sinceCheck >= 1 then
+		sinceCheck = 0
+		checkCastBar()
+	end
 	local now = GetTime()
 	if testUntil and now > testUntil then testUntil = nil end
 	-- swing strip switched off: hide the bars once, then nothing to do each frame
@@ -344,6 +467,7 @@ local function setupSwing()
 		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
 		return
 	end
+	castBarOk = castBarUsable()
 	layoutStrips()
 	applyNativeLook()
 	applyLook()
@@ -425,6 +549,26 @@ local function registerSettings()
 	Settings.CreateSlider(category, height, opts, "Height of the swing strip in pixels.")
 	height:SetValueChangedCallback(function() layoutStrips() end)
 
+	-- Position: under the cast bar, or a place of its own that the player drags.
+	checkbox("attach", "Attach to cast bar", "Swing strip right under the cast bar. Off: the strip has its own position, set with \"Move swing strip\".",
+		function() lock(); layoutStrips() end)
+	local width = Settings.RegisterAddOnSetting(category, "SWINGCAST_WIDTH", "width", db,
+		Settings.VarType.Number, "Swing strip width", DEFAULTS.width)
+	local widthOpts = Settings.CreateSliderOptions(WIDTH_MIN, WIDTH_MAX, 5)
+	if MinimalSliderWithSteppersMixin and widthOpts.SetLabelFormatter then
+		widthOpts:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+	end
+	Settings.CreateSlider(category, width, widthOpts, "Width of the swing strip at its own position. Under the cast bar it takes the cast bar's width.")
+	width:SetValueChangedCallback(function() layoutStrips() end)
+	if layout and CreateSettingsButtonInitializer then
+		layout:AddInitializer(CreateSettingsButtonInitializer("Move swing strip", "Unlock", function()
+			if SettingsPanel and SettingsPanel.IsShown and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
+			unlock()
+		end, "Takes the strip off the cast bar so you can drag it anywhere. Right-click it to lock.", true))
+		layout:AddInitializer(CreateSettingsButtonInitializer("Default position", "Reset", resetPosition,
+			"Put the strip back under the cast bar.", true))
+	end
+
 	-- Font: a dropdown of the fonts every client has, and the size.
 	local dropdown = Settings.CreateDropdown or Settings.CreateDropDown
 	if dropdown and Settings.CreateControlTextContainer then
@@ -495,8 +639,9 @@ local TOGGLES = {
 	swing = "swing strip",
 	swingText = "swing seconds",
 	hideNative = "hide the built-in swing bars",
+	attach = "swing strip attached to the cast bar",
 }
-local ORDER = { "icon", "time", "latency", "swing", "swingText", "hideNative" }
+local ORDER = { "icon", "time", "latency", "swing", "swingText", "hideNative", "attach" }
 local KEY = {} -- lower-case command -> setting key, so /swc swingtext works too
 for _, k in ipairs(ORDER) do KEY[k:lower()] = k end
 
@@ -510,6 +655,19 @@ SlashCmdList.SWINGCAST = function(msg)
 		db[key] = not db[key]
 		P(TOGGLES[key] .. ": " .. (db[key] and "on" or "off"))
 		applyNativeLook()
+		if key == "attach" then lock(); layoutStrips() end
+	elseif cmd == "unlock" or cmd == "move" then
+		unlock()
+	elseif cmd == "lock" then
+		lock()
+		P("swing strip locked.")
+	elseif cmd == "width" and num then
+		db.width = math.min(math.max(math.floor(num), WIDTH_MIN), WIDTH_MAX)
+		layoutStrips()
+		P("swing strip width: " .. db.width .. (db.attach and " (used once the strip has its own position)" or ""))
+	elseif cmd == "position" and arg == "reset" then
+		resetPosition()
+		P("swing strip back under the cast bar.")
 	elseif cmd == "height" and num then
 		db.height = math.min(math.max(math.floor(num), 2), 20)
 		layoutStrips()
@@ -536,7 +694,9 @@ SlashCmdList.SWINGCAST = function(msg)
 		applyMinimap()
 		P("minimap button: " .. (db.showMinimap and "on" or "off"))
 	elseif cmd == "reset" then
+		lock()
 		for k, v in pairs(DEFAULTS) do db[k] = v end
+		db.pos = nil
 		db.colors = CopyTable(DEFAULT_COLORS)
 		applyLook()
 		layoutStrips()
@@ -549,6 +709,9 @@ SlashCmdList.SWINGCAST = function(msg)
 			print(string.format("  %s - %s (%s)", k, TOGGLES[k], db[k] and "on" or "off"))
 		end
 		print("  height <2-20> - swing strip height (" .. db.height .. ")")
+		print("  unlock - drag the swing strip anywhere, lock - fix it again")
+		print("  width <" .. WIDTH_MIN .. "-" .. WIDTH_MAX .. "> - swing strip width at its own position (" .. db.width .. ")")
+		print("  position reset - swing strip back under the cast bar")
 		print("  test - 8 s preview of the swing strip")
 		print("  color swing|queued|cleave|latency - pick a colour, color reset - default colours")
 		print("  font <7-20> - font size")
@@ -578,6 +741,7 @@ loader:SetScript("OnEvent", function(_, event, name)
 	elseif event == "ADDON_LOADED" and name == "Blizzard_SwingTimer" then
 		if IsLoggedIn() then setupSwing() end
 	elseif event == "PLAYER_LOGIN" then
+		loginTime = GetTime()
 		setupCastBar()
 		local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_SwingTimer")
 		if loaded or SwingTimerMainHandFrame then setupSwing() end

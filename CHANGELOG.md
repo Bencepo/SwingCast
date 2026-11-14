@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Move the swing strip: "Move swing strip" in the options (or `/swc unlock`) takes it off the cast bar, drag it anywhere, right-click to lock. Width slider for the free position, "Default position" puts it back under the cast bar.
+- Fix: when another addon hides or replaces the standard cast bar, the swing strip no longer ends up in the top left corner. It switches to its own position and tells you once in chat.
+- New commands: `/swc unlock`, `/swc lock`, `/swc width <60-600>`, `/swc attach`, `/swc position reset`.
+
 ## 0.4.4
 
 - Brighter icon that stays readable on the round minimap button.

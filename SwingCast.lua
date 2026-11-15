@@ -10,9 +10,9 @@
 -- timer is the only accurate one, because Forever keeps the combat log from addons.
 -- SwingCast only draws it in its own place and look, and tints it while an
 -- on-next-swing ability (Maul, Heroic Strike, Cleave, Raptor Strike) is queued.
--- The built-in swing timer has to be switched on (Options > Advanced > Swing Timer).
+-- The built-in swing timer has to be switched on (Options > Advanced Options > Swing Timer).
 --
--- /swc  lists the settings.
+-- /swc  opens the options window (/swc help lists the settings).
 
 local ADDON = ...
 
@@ -107,11 +107,15 @@ local function castInfo()
 	if name then return tex, startMS, endMS, true end
 end
 
+local editModeOpen = false
+
 local function castRefresh()
 	local tex, startMS, endMS, channel = castInfo()
 	if not tex then
 		castEnd = nil
 		lagTex:Hide()
+		-- the icon goes with the cast; Edit Mode keeps its placeholder
+		if editModeOpen then icon:SetTexture(134400) else icon:Hide() end
 		return
 	end
 	castEnd = endMS / 1000
@@ -174,7 +178,6 @@ local function applySelection()
 	end
 end
 
-local editModeOpen = false
 applyIcon = function()
 	if not icon then return end
 	local h = math.max(castBar:GetHeight(), 10)
@@ -334,7 +337,7 @@ local function detach()
 end
 
 local function lock()
-	if not unlocked then return end
+	if not unlocked then return false end
 	unlocked = nil
 	mover:EnableMouse(false)
 	mover:SetBackdropColor(0, 0, 0, 0)
@@ -342,6 +345,7 @@ local function lock()
 	moverLabel:Hide()
 	updatePreview()
 	refreshOptions()
+	return true
 end
 
 -- how: "manual" (/swc unlock, options window) takes the strip off the cast bar at once;
@@ -707,6 +711,55 @@ local function fontLabel()
 	return FONTS[1].label
 end
 
+local BUG_URL = "https://github.com/Bencepo/SwingCast/issues/new/choose"
+local bugPopup
+
+-- addons cannot open a browser: show the link selected, ready for Ctrl+C
+local function showBugPopup()
+	if not bugPopup then
+		local f = CreateFrame("Frame", "SwingCastBugPopup", UIParent, "BackdropTemplate")
+		f:SetSize(420, 96)
+		f:SetFrameStrata("FULLSCREEN_DIALOG")
+		f:SetToplevel(true)
+		f:SetClampedToScreen(true)
+		f:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+		f:EnableMouse(true)
+		f:SetBackdrop({
+			bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+			edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+			tile = true, tileSize = 16, edgeSize = 16,
+			insets = { left = 4, right = 4, top = 4, bottom = 4 },
+		})
+		f:SetBackdropBorderColor(0.6, 0.6, 0.6, 1)
+		tinsert(UISpecialFrames, "SwingCastBugPopup")
+		local t = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+		t:SetPoint("TOPLEFT", 14, -12)
+		t:SetText("Report a bug")
+		local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+		close:SetPoint("TOPRIGHT", -2, -2)
+		local eb = CreateFrame("EditBox", nil, f, "InputBoxTemplate")
+		eb:SetSize(380, 22)
+		eb:SetPoint("TOPLEFT", 20, -34)
+		eb:SetAutoFocus(false)
+		-- read-only: typing puts the link back
+		eb:SetScript("OnTextChanged", function(self)
+			if self:GetText() ~= BUG_URL then self:SetText(BUG_URL); self:HighlightText() end
+		end)
+		eb:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+		eb:SetScript("OnMouseUp", function(self) self:HighlightText() end)
+		eb:SetScript("OnEscapePressed", function() f:Hide() end)
+		f.eb = eb
+		local h = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+		h:SetPoint("TOPLEFT", eb, "BOTTOMLEFT", -4, -6)
+		h:SetText("Copy with Ctrl+C. No GitHub account? Comment on CurseForge.")
+		bugPopup = f
+	end
+	bugPopup:Show()
+	bugPopup.eb:SetText(BUG_URL)
+	bugPopup.eb:SetFocus()
+	bugPopup.eb:HighlightText()
+end
+
 local function buildWindow()
 	win = CreateFrame("Frame", "SwingCastOptionsFrame", UIParent, "BackdropTemplate")
 	win:SetSize(500, 470)
@@ -761,6 +814,7 @@ local function buildWindow()
 	checkbox(win, L, -260, "attach", "Attach to cast bar", "Strip right under the cast bar. Off: its own position, set by dragging it (Move, or the game's Edit Mode).")
 	header(win, L, -292, "General")
 	checkbox(win, L, -310, "showMinimap", "Minimap button", "Show the SwingCast button at the minimap.")
+	makeButton(win, "Report a bug", 120, showBugPopup, "Shows the link to SwingCast's bug reports to copy."):SetPoint("TOPLEFT", L + 4, -340)
 
 	-- right column: sizes, font, colours
 	local R = 262
@@ -893,7 +947,8 @@ for _, k in ipairs(ORDER) do KEY[k:lower()] = k end
 SLASH_SWINGCAST1 = "/swc"
 SLASH_SWINGCAST2 = "/swingcast"
 SlashCmdList.SWINGCAST = function(msg)
-	local cmd, arg = strsplit(" ", strtrim(msg or ""):lower(), 2)
+	local cmd, arg = strtrim(msg or ""):lower():match("^(%S*)%s*(.-)$")
+	if arg == "" then arg = nil end
 	local num = tonumber(arg)
 	local key = KEY[cmd or ""]
 	if key then
@@ -904,8 +959,7 @@ SlashCmdList.SWINGCAST = function(msg)
 	elseif cmd == "unlock" or cmd == "move" then
 		unlock("manual")
 	elseif cmd == "lock" then
-		lock()
-		P("swing strip locked.")
+		P(lock() and "swing strip locked." or "swing strip is already locked.")
 	elseif cmd == "width" and num then
 		db.width = math.min(math.max(math.floor(num), WIDTH_MIN), WIDTH_MAX)
 		layoutStrips()
@@ -939,6 +993,11 @@ SlashCmdList.SWINGCAST = function(msg)
 		lock()
 		for k, v in pairs(DEFAULTS) do db[k] = v end
 		db.pos = nil
+		db.optPos = nil
+		if win then
+			win:ClearAllPoints()
+			win:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+		end
 		db.colors = CopyTable(DEFAULT_COLORS)
 		applyLook()
 		applyIcon()

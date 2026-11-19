@@ -569,24 +569,9 @@ end
 
 local function setupSwing()
 	if #strips > 0 then return end
-	local seen = {}
 	for _, name in ipairs(SWING_FRAMES) do
 		local native = _G[name]
-		if native and native.StatusBar then
-			seen[native] = true
-			strips[#strips + 1] = makeStrip(native)
-		end
-	end
-	-- Swing bars the game added under another name: any SwingTimer...Frame with a status bar.
-	local f = EnumerateFrames()
-	while f do
-		local name = f.GetName and f:GetName()
-		---@diagnostic disable-next-line: undefined-field
-		if name and not seen[f] and f.StatusBar and name:match("^SwingTimer.*Frame$") then
-			seen[f] = true
-			strips[#strips + 1] = makeStrip(f)
-		end
-		f = EnumerateFrames(f)
+		if native and native.StatusBar then strips[#strips + 1] = makeStrip(native) end
 	end
 	if #strips == 0 then
 		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")

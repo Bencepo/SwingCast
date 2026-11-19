@@ -433,10 +433,19 @@ local function checkCastBar()
 end
 
 local failed
+local function nativeAlpha()
+	return (db.swing and db.hideNative and not failed) and 0 or 1
+end
 local function applyNativeLook()
+	local a = nativeAlpha()
 	for _, s in ipairs(strips) do
-		s.native:SetAlpha((db.swing and db.hideNative and not failed) and 0 or 1)
+		s.native:SetAlpha(a)
 	end
+end
+-- The game sets the built-in bars' alpha again on its own (fading in on a swing, after
+-- Edit Mode, after a loading screen), so the hidden look is checked on every frame.
+local function keepNativeHidden(s)
+	if s.native:GetAlpha() ~= 0 then s.native:SetAlpha(0) end
 end
 
 -- Forever hands some combat values to addons as "secret" values: they can be passed
@@ -507,7 +516,11 @@ driver:SetScript("OnUpdate", function(_, elapsed)
 			for _, s in ipairs(strips) do s.bar:SetStatusBarColor(r, g, b) end
 		end
 	end
-	for i = 1, #strips do safeUpdate(strips[i], now) end
+	local hide = nativeAlpha() == 0
+	for i = 1, #strips do
+		safeUpdate(strips[i], now)
+		if hide then keepNativeHidden(strips[i]) end
+	end
 end)
 
 local function makeStrip(native)
@@ -556,9 +569,23 @@ end
 
 local function setupSwing()
 	if #strips > 0 then return end
+	local seen = {}
 	for _, name in ipairs(SWING_FRAMES) do
 		local native = _G[name]
-		if native and native.StatusBar then strips[#strips + 1] = makeStrip(native) end
+		if native and native.StatusBar then
+			seen[native] = true
+			strips[#strips + 1] = makeStrip(native)
+		end
+	end
+	-- Swing bars the game added under another name: any SwingTimer...Frame with a status bar.
+	local f = EnumerateFrames()
+	while f do
+		local name = f.GetName and f:GetName()
+		if name and not seen[f] and f.StatusBar and name:match("^SwingTimer.*Frame$") then
+			seen[f] = true
+			strips[#strips + 1] = makeStrip(f)
+		end
+		f = EnumerateFrames(f)
 	end
 	if #strips == 0 then
 		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")

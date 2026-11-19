@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.3
+
+- Fix: the built-in swing timer showed up again next to SwingCast's strip. The game sets its bars visible again on its own (on a swing, after Edit Mode or a loading screen); SwingCast now keeps them hidden on every frame while "Hide built-in swing bars" is on.
+- Swing bars the game adds under another name are picked up as well.
+
 ## 0.5.2
 
 - "Report a bug" button in the window: shows the link to the bug reports, ready to copy with Ctrl+C.

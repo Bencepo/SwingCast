@@ -581,6 +581,7 @@ local function setupSwing()
 	local f = EnumerateFrames()
 	while f do
 		local name = f.GetName and f:GetName()
+		---@diagnostic disable-next-line: undefined-field
 		if name and not seen[f] and f.StatusBar and name:match("^SwingTimer.*Frame$") then
 			seen[f] = true
 			strips[#strips + 1] = makeStrip(f)

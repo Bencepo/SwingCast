@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.2
+
+- The shared settings window (BencepoUI 4): the hint in its title row ("drag to move …") no longer runs into the title and version; it is shortened or left out when there is no room.
+
 ## 1.1.1
 
 - The swing strip preview from the minimap button no longer ends the preview of the open settings window after 8 seconds.

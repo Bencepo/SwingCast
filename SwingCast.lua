@@ -57,7 +57,6 @@ local FONTS = {
 
 local SWING_FRAMES = { "SwingTimerMainHandFrame", "SwingTimerOffHandFrame", "SwingTimerRangedFrame" }
 
-
 -- All ranks: an old action button can still hold a low rank, and IsCurrentSpell
 -- only reports the exact rank that was queued. First match decides the colour.
 local QUEUE = {
@@ -621,7 +620,7 @@ local function resetColors()
 end
 
 local function startTest()
-	testUntil = GetTime() + 8
+	testUntil = math.max(testUntil or 0, GetTime() + 8) -- never cuts short the open window's preview
 	P("8 s preview of the swing strip, the second half tinted as if Maul were queued.")
 end
 

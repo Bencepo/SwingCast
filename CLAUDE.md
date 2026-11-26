@@ -23,3 +23,4 @@ SwingCast: extends the standard player cast bar for WoW Forever (Lua 5.1). Autho
 - English only: UI texts, commands, descriptions. No translations, no `Notes-xxXX` in the .toc. Settings in a window of its own, not Blizzard's options.
 - CI runs luacheck and LuaLS with the WoW API annotations; LuaLS must report zero diagnostics or the release stops.
 - Release: new version heading at the top of `CHANGELOG.md`, push to `main`; the workflow uploads to CurseForge and Wago. Test in game first.
+- Release rhythm (Ben, Nov 2026): at most one release per addon per week. Tested changes are collected under `## Unreleased` at the top of `CHANGELOG.md` (the workflow only releases a numbered heading, so pushes to `main` with `## Unreleased` release nothing); the weekly release renames it to the version. Exception: hotfixes for Lua errors or a broken core feature go out at once.

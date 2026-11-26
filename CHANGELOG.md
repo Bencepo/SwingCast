@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.3
 
 - Zero idle frame work: the swing driver sleeps whenever no swing bar or preview is active, and queued-ability tinting updates on `CURRENT_SPELL_CAST_CHANGED` instead of polling `IsCurrentSpell` 20 times per second.
 - Fixed: `applySelection` no longer wipes the cast bar's Edit Mode selection box if anchors were not ready yet, and respects combat lockdown; queued-ability tinting now colours only the Main-Hand bar (not Off-Hand or Ranged); visible strips stack without empty gaps; toggling the latency zone updates an active cast immediately.

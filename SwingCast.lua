@@ -73,6 +73,7 @@ local QUEUE = {
 }
 
 local IsCurrentSpell = (C_Spell and C_Spell.IsCurrentSpell) or IsCurrentSpell
+local issecret = issecretvalue or function() return false end
 local _, playerClass = UnitClass("player")
 local queueList = QUEUE[playerClass]
 
@@ -80,6 +81,7 @@ local db
 local castBar -- the standard player cast bar
 local applyLook -- font and colours, defined with the swing strips
 local applyIcon -- icon size and place, defined with the cast bar
+local syncDriver -- defined with the swing driver
 
 local function P(msg) print("|cff7fbf3fSwingCast:|r " .. msg) end
 
@@ -98,6 +100,7 @@ end
 ---------------------------------------------------------------- cast bar
 local icon, timeText, lagTex
 local castEnd
+local shownTenths
 
 local function castInfo()
 	local name, _, tex, startMS, endMS = UnitCastingInfo("player")
@@ -112,17 +115,20 @@ local function castRefresh()
 	local tex, startMS, endMS, channel = castInfo()
 	if not tex then
 		castEnd = nil
+		shownTenths = nil
+		if timeText then timeText:SetText("") end
 		lagTex:Hide()
 		-- the icon goes with the cast; Edit Mode keeps its placeholder
 		if editModeOpen then icon:SetTexture(134400) else icon:Hide() end
 		return
 	end
-	castEnd = endMS / 1000
+	local hasTimes = startMS ~= nil and endMS ~= nil and not (issecret(startMS) or issecret(endMS))
+	castEnd = hasTimes and (endMS / 1000) or nil
 
 	icon:SetTexture(tex)
 	icon:SetShown(db.icon)
 
-	local dur = (endMS - startMS) / 1000
+	local dur = hasTimes and ((endMS - startMS) / 1000) or 0
 	local _, _, home, world = GetNetStats()
 	local lag = math.max(home or 0, world or 0) / 1000
 	if db.latency and dur > 0 and lag > 0 then
@@ -144,7 +150,6 @@ end
 
 -- Runs every frame while the cast bar is shown: only touch the label when the shown
 -- tenth of a second changes.
-local shownTenths
 local function castOnUpdate()
 	local tenths
 	if db.time and castEnd then
@@ -159,13 +164,20 @@ end
 -- Edit Mode's box around the cast bar: widened to the left while the icon sits
 -- outside the bar, so the room the icon needs is visible while placing the bar.
 local selPoints
+local pendingSelection = false
 local function applySelection()
 	local sel = castBar and castBar.Selection
 	if not sel then return end
+	if InCombatLockdown() then
+		pendingSelection = true
+		return
+	end
+	pendingSelection = false
 	if not selPoints then
-		selPoints = {}
-		for i = 1, sel:GetNumPoints() do selPoints[i] = { sel:GetPoint(i) } end
-		if #selPoints == 0 then return end
+		local pts = {}
+		for i = 1, sel:GetNumPoints() do pts[i] = { sel:GetPoint(i) } end
+		if #pts == 0 then return end
+		selPoints = pts
 	end
 	local extra = 0
 	if db.icon and not db.iconInside then extra = icon:GetWidth() + 5 end
@@ -230,13 +242,22 @@ local function setupCastBar()
 		"UNIT_SPELLCAST_CHANNEL_UPDATE", "UNIT_SPELLCAST_CHANNEL_STOP" }) do
 		ev:RegisterUnitEvent(e, "player")
 	end
-	ev:SetScript("OnEvent", castRefresh)
+	ev:RegisterEvent("PLAYER_REGEN_ENABLED")
+	ev:SetScript("OnEvent", function(_, event)
+		if event == "PLAYER_REGEN_ENABLED" then
+			if pendingSelection then applySelection() end
+			return
+		end
+		if event == "UNIT_SPELLCAST_FAILED" and (UnitCastingInfo("player") or UnitChannelInfo("player")) then
+			return
+		end
+		castRefresh()
+	end)
 end
 
 ---------------------------------------------------------------- swing strips
-local strips = {}   -- { native = frame, bar = our StatusBar }
+local strips = {}   -- { native = frame, bar = our StatusBar, isMainHand = bool }
 local tint = "swing"
-local sinceQueue = 0
 local testUntil
 
 local function queuedColor()
@@ -250,7 +271,26 @@ local function queuedColor()
 	return "swing"
 end
 
-local issecret = issecretvalue or function() return false end
+local function applyBarColors()
+	local sr, sg, sb = color("swing")
+	local tr, tg, tb = color(tint)
+	for i = 1, #strips do
+		local s = strips[i]
+		-- Queued abilities (Maul, Heroic Strike, Cleave, Raptor Strike) only affect the Main-Hand swing.
+		if s.isMainHand or testUntil then
+			s.bar:SetStatusBarColor(tr, tg, tb)
+		else
+			s.bar:SetStatusBarColor(sr, sg, sb)
+		end
+	end
+end
+
+local function refreshTint(newTint)
+	if newTint ~= tint then
+		tint = newTint
+		applyBarColors()
+	end
+end
 
 -- The strip's own position: a frame the player can drag, used when the strip is not
 -- attached to the cast bar or the cast bar cannot carry it (see castBarUsable).
@@ -290,34 +330,62 @@ end
 
 local function layoutStrips()
 	if #strips == 0 then return end
-	local n = #strips
 	local onCastBar = db.attach and castBarOk
-	local anchor, first = onCastBar and castBar or mover, true
+	local showAll = testUntil ~= nil or unlocked ~= nil
+	local activeCount = 0
+	if not showAll then
+		for i = 1, #strips do
+			if strips[i].visible then activeCount = activeCount + 1 end
+		end
+	end
+	local stackAll = showAll or activeCount == 0
+	local count = stackAll and #strips or activeCount
+
 	if not onCastBar then
-		mover:SetSize(db.width, n * db.height + (n - 1) * 2)
+		mover:SetSize(db.width, count * db.height + (count - 1) * 2)
 		placeMover()
 	end
-	for _, s in ipairs(strips) do
-		s.bar:ClearAllPoints()
+	local anchor, first = onCastBar and castBar or mover, true
+	local firstBar, lastBar
+	for i = 1, #strips do
+		local s = strips[i]
 		s.bar:SetHeight(db.height)
 		s.spark:SetHeight(db.height * 2.5)
-		local from = (first and not onCastBar) and "TOP" or "BOTTOM"
-		local gap = first and (onCastBar and -4 or 0) or -2
-		s.bar:SetPoint("TOPLEFT", anchor, from .. "LEFT", 0, gap)
-		s.bar:SetPoint("TOPRIGHT", anchor, from .. "RIGHT", 0, gap)
-		anchor, first = s.bar, false
+		if stackAll or s.visible then
+			s.bar:ClearAllPoints()
+			local from = (first and not onCastBar) and "TOP" or "BOTTOM"
+			local gap = first and (onCastBar and -4 or 0) or -2
+			s.bar:SetPoint("TOPLEFT", anchor, from .. "LEFT", 0, gap)
+			s.bar:SetPoint("TOPRIGHT", anchor, from .. "RIGHT", 0, gap)
+			anchor, first = s.bar, false
+			if not firstBar then firstBar = s.bar end
+			lastBar = s.bar
+		end
 	end
 	-- attached: the (unlocked) frame lies over the strip, so Edit Mode can show and grab it
-	if onCastBar then
+	if onCastBar and firstBar and lastBar then
 		mover:ClearAllPoints()
-		mover:SetPoint("TOPLEFT", strips[1].bar, "TOPLEFT")
-		mover:SetPoint("BOTTOMRIGHT", strips[n].bar, "BOTTOMRIGHT")
+		mover:SetPoint("TOPLEFT", firstBar, "TOPLEFT")
+		mover:SetPoint("BOTTOMRIGHT", lastBar, "BOTTOMRIGHT")
 	end
 end
 
 -- The preview runs while the strip is unlocked or the options window is open.
 local function updatePreview()
+	local wasPreview = testUntil ~= nil
 	testUntil = (unlocked or optionsShown) and math.huge or nil
+	if wasPreview and not testUntil then
+		for i = 1, #strips do
+			strips[i].previewInit = false
+			strips[i].previewTenths = nil
+		end
+		tint = queuedColor()
+		applyBarColors()
+		layoutStrips()
+	elseif testUntil and not wasPreview then
+		layoutStrips()
+	end
+	if syncDriver then syncDriver() end
 end
 
 local refreshOptions = function() end -- set by the options window
@@ -404,125 +472,181 @@ local function resetPosition()
 	refreshOptions()
 end
 
--- The game's Edit Mode: the strip shows up there and can be dragged like the game's frames.
-local function hookEditMode()
-	if EventRegistry and EventRegistry.RegisterCallback then
-		EventRegistry:RegisterCallback("EditMode.Enter", function() editModeOpen = true; applyIcon(); unlock("editmode") end, mover)
-		EventRegistry:RegisterCallback("EditMode.Exit", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end end, mover)
-	elseif EditModeManagerFrame then
-		hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() editModeOpen = true; applyIcon(); unlock("editmode") end)
-		hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end end)
-	end
-end
-
--- Checked once a second: the cast bar may get its place late (layouts load after
--- login) or lose it to another addon later on.
+-- Checked on login, world transitions, Edit Mode exit, and attach changes: the cast bar
+-- may get its place late (layouts load after login) or lose it to another addon.
 local loginTime
 local hinted = false
 local function checkCastBar()
+	if not (db and db.attach) then return end
 	local ok = castBarUsable()
 	if ok ~= castBarOk then
 		castBarOk = ok
 		layoutStrips()
 	end
-	if not ok and db.attach and not hinted and #strips > 0 and loginTime and GetTime() - loginTime > 5 then
+	if not ok and not hinted and #strips > 0 and loginTime and GetTime() - loginTime > 5 then
 		hinted = true
 		P("the standard cast bar is hidden or replaced by another addon, so the swing strip uses its own position. /swc unlock or Edit Mode to move it.")
 	end
 end
 
+-- The game's Edit Mode: the strip shows up there and can be dragged like the game's frames.
+local function hookEditMode()
+	if EventRegistry and EventRegistry.RegisterCallback then
+		EventRegistry:RegisterCallback("EditMode.Enter", function() editModeOpen = true; applyIcon(); unlock("editmode") end, mover)
+		EventRegistry:RegisterCallback("EditMode.Exit", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end; checkCastBar() end, mover)
+	elseif EditModeManagerFrame then
+		hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() editModeOpen = true; applyIcon(); unlock("editmode") end)
+		hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end; checkCastBar() end)
+	end
+end
+
 local failed
+local settingAlpha = false
 local function nativeAlpha()
-	return (db.swing and db.hideNative and not failed) and 0 or 1
+	return (db and db.swing and db.hideNative and not failed) and 0 or 1
 end
 local function applyNativeLook()
 	local a = nativeAlpha()
+	settingAlpha = true
 	for _, s in ipairs(strips) do
 		s.native:SetAlpha(a)
 	end
+	settingAlpha = false
 end
--- The game sets the built-in bars' alpha again on its own (fading in on a swing, after
--- Edit Mode, after a loading screen), so the hidden look is checked on every frame.
-local function keepNativeHidden(s)
-	if s.native:GetAlpha() ~= 0 then s.native:SetAlpha(0) end
+
+local function setStripVisible(s, show)
+	if s.visible == show then return false end
+	s.visible = show
+	if show then s.bar:Show() else s.bar:Hide() end
+	return true
 end
 
 -- Forever hands some combat values to addons as "secret" values: they can be passed
 -- on to a bar or a text, but not compared or calculated with. So the strip copies the
 -- built-in bar's values and its own seconds label as they are, without arithmetic.
 local function stripUpdate(s, now)
-	local sb = s.native.StatusBar
 	if testUntil then
 		local f = (now % 2) / 2
-		s.bar:SetMinMaxValues(0, 1)
+		if not s.previewInit then
+			s.bar:SetMinMaxValues(0, 1)
+			s.previewInit = true
+		end
 		s.bar:SetValue(f)
-		s.text:SetText(db.swingText and string.format("%.1f", 2 - f * 2) or "")
-		s.bar:Show()
-		return
+		if db.swingText then
+			local tenths = math.floor((2 - f * 2) * 10 + 0.5)
+			if tenths ~= s.previewTenths then
+				s.previewTenths = tenths
+				s.text:SetText(string.format("%.1f", tenths / 10))
+				s.hadText = true
+			end
+		elseif s.hadText then
+			s.text:SetText("")
+			s.hadText = false
+			s.previewTenths = nil
+		end
+		return setStripVisible(s, true)
 	end
-	if not (db.swing and sb and s.native:IsShown()) then
-		s.bar:Hide()
-		return
-	end
+	local sb = s.native.StatusBar
 	local mn, mx = sb:GetMinMaxValues()
-	if mn == nil or mx == nil then s.bar:Hide() return end
+	if mn == nil or mx == nil then return setStripVisible(s, false) end
 	s.bar:SetMinMaxValues(mn, mx)
 	s.bar:SetValue(sb:GetValue())
-	local label = db.swingText and sb.TimeLabel and sb.TimeLabel:GetText()
-	if label ~= nil and (issecret(label) or label ~= "") then s.text:SetText(label) else s.text:SetText("") end
-	s.bar:Show()
+	if db.swingText then
+		local label = sb.TimeLabel and sb.TimeLabel:GetText()
+		if label ~= nil and (issecret(label) or label ~= "") then
+			s.text:SetText(label)
+			s.hadText = true
+		elseif s.hadText then
+			s.text:SetText("")
+			s.hadText = false
+		end
+	elseif s.hadText then
+		s.text:SetText("")
+		s.hadText = false
+	end
+	return setStripVisible(s, true)
 end
 
 -- If the strip ever fails, the built-in bars come back, so a swing timer is never lost.
 local function safeUpdate(s, now)
-	if failed then return end
-	local ok, err = pcall(stripUpdate, s, now)
+	if failed then return false end
+	if not testUntil and not (db.swing and s.native.StatusBar and s.native:IsShown()) then
+		return setStripVisible(s, false)
+	end
+	local ok, changed = pcall(stripUpdate, s, now)
 	if not ok then
 		failed = true
-		for _, x in ipairs(strips) do x.bar:Hide(); x.native:SetAlpha(1) end
-		P("swing strip off after an error, the built-in swing timer is shown again. /reload to retry. " .. tostring(err))
+		settingAlpha = true
+		for _, x in ipairs(strips) do
+			x.visible = false
+			x.bar:Hide()
+			x.native:SetAlpha(1)
+		end
+		settingAlpha = false
+		P("swing strip off after an error, the built-in swing timer is shown again. /reload to retry. " .. tostring(changed))
+		if syncDriver then syncDriver() end
+		return false
 	end
+	return changed
 end
 
 local driver = CreateFrame("Frame")
-local barsHidden = false
-local sinceCheck = 0
-driver:SetScript("OnUpdate", function(_, elapsed)
-	if #strips == 0 then return end
-	sinceCheck = sinceCheck + elapsed
-	if sinceCheck >= 1 then
-		sinceCheck = 0
-		checkCastBar()
+driver:Hide()
+
+local function anyNativeShown()
+	for i = 1, #strips do
+		if strips[i].native:IsShown() then return true end
 	end
-	local now = GetTime()
-	if testUntil and now > testUntil then testUntil = nil end
-	-- swing strip switched off: hide the bars once, then nothing to do each frame
-	if not (db.swing or testUntil) then
-		if not barsHidden then
-			for i = 1, #strips do strips[i].bar:Hide() end
-			barsHidden = true
+	return false
+end
+
+syncDriver = function()
+	local active = #strips > 0 and not failed and (testUntil ~= nil or (db and db.swing and anyNativeShown()))
+	if active then
+		driver:Show()
+	else
+		driver:Hide()
+		local relayout = false
+		for i = 1, #strips do
+			if setStripVisible(strips[i], false) then relayout = true end
 		end
+		if relayout then layoutStrips() end
+	end
+end
+
+driver:SetScript("OnUpdate", function()
+	if #strips == 0 or failed then
+		syncDriver()
 		return
 	end
-	barsHidden = false
-	sinceQueue = sinceQueue + elapsed
-	if sinceQueue >= 0.05 then
-		sinceQueue = 0
-		local c = testUntil and ((now % 4 < 2) and "queued" or "swing") or queuedColor()
-		if c ~= tint then
-			tint = c
-			local r, g, b = color(c)
-			for _, s in ipairs(strips) do s.bar:SetStatusBarColor(r, g, b) end
+	local now = GetTime()
+	if testUntil and now > testUntil then
+		testUntil = nil
+		for i = 1, #strips do
+			strips[i].previewInit = false
+			strips[i].previewTenths = nil
 		end
+		tint = queuedColor()
+		applyBarColors()
+		layoutStrips()
 	end
-	local hide = nativeAlpha() == 0
+	if not (db.swing or testUntil) then
+		syncDriver()
+		return
+	end
+	if testUntil then
+		refreshTint((now % 4 < 2) and "queued" or "swing")
+	end
+	local anyShown, relayout = false, false
 	for i = 1, #strips do
-		safeUpdate(strips[i], now)
-		if hide then keepNativeHidden(strips[i]) end
+		if safeUpdate(strips[i], now) then relayout = true end
+		if strips[i].visible then anyShown = true end
 	end
+	if relayout then layoutStrips() end
+	if not anyShown and not testUntil then syncDriver() end
 end)
 
-local function makeStrip(native)
+local function makeStrip(native, isMainHand)
 	local bar = CreateFrame("StatusBar", nil, UIParent)
 	bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
 	bar:SetStatusBarColor(color("swing"))
@@ -548,7 +672,25 @@ local function makeStrip(native)
 	local text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	text:SetPoint("RIGHT", bar, "RIGHT", -2, 0)
 
-	return { native = native, bar = bar, text = text, spark = spark }
+	-- Wake driver when the game starts showing a swing bar and keep the native bar hidden without polling.
+	native:HookScript("OnShow", function(self)
+		if nativeAlpha() == 0 and self:GetAlpha() ~= 0 then
+			settingAlpha = true
+			self:SetAlpha(0)
+			settingAlpha = false
+		end
+		syncDriver()
+	end)
+	hooksecurefunc(native, "SetAlpha", function(self, a)
+		if settingAlpha then return end
+		if nativeAlpha() == 0 and a ~= 0 then
+			settingAlpha = true
+			self:SetAlpha(0)
+			settingAlpha = false
+		end
+	end)
+
+	return { native = native, bar = bar, text = text, spark = spark, isMainHand = isMainHand, visible = false, hadText = false }
 end
 
 -- Font and colours, applied again whenever a setting changes.
@@ -559,27 +701,38 @@ applyLook = function()
 		local r, g, b = color("latency")
 		lagTex:SetColorTexture(r, g, b, 0.45)
 	end
-	local r, g, b = color(tint)
 	for _, s in ipairs(strips) do
 		s.text:SetFont(path, math.max(db.fontSize - 2, 7), "OUTLINE")
-		s.bar:SetStatusBarColor(r, g, b)
 	end
+	applyBarColors()
 end
 
+local queueEvents
 local function setupSwing()
 	if #strips > 0 then return end
 	for _, name in ipairs(SWING_FRAMES) do
 		local native = _G[name]
-		if native and native.StatusBar then strips[#strips + 1] = makeStrip(native) end
+		if native and native.StatusBar then
+			strips[#strips + 1] = makeStrip(native, name == "SwingTimerMainHandFrame")
+		end
 	end
 	if #strips == 0 then
 		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
 		return
 	end
+	if queueList and not queueEvents then
+		queueEvents = CreateFrame("Frame")
+		queueEvents:RegisterEvent("CURRENT_SPELL_CAST_CHANGED")
+		queueEvents:SetScript("OnEvent", function()
+			if not testUntil then refreshTint(queuedColor()) end
+		end)
+	end
+	tint = queuedColor()
 	castBarOk = castBarUsable()
 	layoutStrips()
 	applyNativeLook()
 	applyLook()
+	syncDriver()
 end
 
 ---------------------------------------------------------------- options window, minimap button
@@ -620,17 +773,31 @@ local function resetColors()
 end
 
 local function startTest()
+	if #strips == 0 then
+		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
+		return
+	end
 	testUntil = math.max(testUntil or 0, GetTime() + 8) -- never cuts short the open window's preview
+	layoutStrips()
+	syncDriver()
 	P("8 s preview of the swing strip, the second half tinted as if Maul were queued.")
 end
 
 -- Changing a switch: store it and redraw what depends on it.
 local function setToggle(key, value)
 	db[key] = value
-	if key == "swing" or key == "hideNative" then applyNativeLook()
-	elseif key == "attach" then layoutStrips()
-	elseif key == "icon" or key == "iconInside" then applyIcon()
-	elseif key == "showMinimap" then applyMinimap()
+	if key == "swing" or key == "hideNative" then
+		applyNativeLook()
+		syncDriver()
+	elseif key == "attach" then
+		checkCastBar()
+		layoutStrips()
+	elseif key == "icon" or key == "iconInside" then
+		applyIcon()
+	elseif key == "latency" then
+		if castBar then castRefresh() end
+	elseif key == "showMinimap" then
+		applyMinimap()
 	end
 	refreshOptions()
 end
@@ -721,8 +888,9 @@ local function buildWindow()
 end
 
 local function openOptions()
+	if not db then return end
 	if not win then buildWindow() end
-	win:SetShown(not win:IsShown())
+	win:Toggle()
 end
 
 -- The game's options only point to the window, so the addon is still found there.
@@ -732,6 +900,7 @@ local function registerSettings()
 	if layout and CreateSettingsButtonInitializer then
 		layout:AddInitializer(CreateSettingsButtonInitializer("SwingCast has its own window", "Open", function()
 			if SettingsPanel and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
+			if not db then return end
 			if not win then buildWindow() end
 			win:Show()
 		end, "Opens the SwingCast window. It can be dragged anywhere and stays open while you play.", true))
@@ -785,6 +954,7 @@ for _, k in ipairs(ORDER) do KEY[k:lower()] = k end
 SLASH_SWINGCAST1 = "/swc"
 SLASH_SWINGCAST2 = "/swingcast"
 SlashCmdList.SWINGCAST = function(msg)
+	if not db then return end
 	local cmd, arg = strtrim(msg or ""):lower():match("^(%S*)%s*(.-)$")
 	if arg == "" then arg = nil end
 	local num = tonumber(arg)
@@ -842,6 +1012,7 @@ SlashCmdList.SWINGCAST = function(msg)
 		layoutStrips()
 		applyNativeLook()
 		applyMinimap()
+		syncDriver()
 		P("settings reset.")
 	else
 		P("/swc opens the window. /swc <setting> switches it on or off:")
@@ -866,7 +1037,8 @@ end
 local loader = CreateFrame("Frame")
 loader:RegisterEvent("ADDON_LOADED")
 loader:RegisterEvent("PLAYER_LOGIN")
-loader:SetScript("OnEvent", function(_, event, name)
+loader:RegisterEvent("PLAYER_ENTERING_WORLD")
+loader:SetScript("OnEvent", function(self, event, name)
 	if event == "ADDON_LOADED" and name == ADDON then
 		SwingCastDB = SwingCastDB or {}
 		db = SwingCastDB
@@ -880,12 +1052,24 @@ loader:SetScript("OnEvent", function(_, event, name)
 		registerSettings()
 		registerMinimap()
 	elseif event == "ADDON_LOADED" and name == "Blizzard_SwingTimer" then
-		if IsLoggedIn() then setupSwing() end
+		if IsLoggedIn() then
+			setupSwing()
+			if #strips > 0 then self:UnregisterEvent("ADDON_LOADED") end
+		end
 	elseif event == "PLAYER_LOGIN" then
+		self:UnregisterEvent("PLAYER_LOGIN")
 		loginTime = GetTime()
 		setupCastBar()
 		hookEditMode()
 		local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_SwingTimer")
-		if loaded or SwingTimerMainHandFrame then setupSwing() end
+		if loaded or SwingTimerMainHandFrame then
+			setupSwing()
+			if #strips > 0 then self:UnregisterEvent("ADDON_LOADED") end
+		end
+		-- Check cast bar layout again once Edit Mode / other UI addons have finished placing frames.
+		C_Timer.After(6, checkCastBar)
+	elseif event == "PLAYER_ENTERING_WORLD" then
+		checkCastBar()
+		applyNativeLook()
 	end
 end)

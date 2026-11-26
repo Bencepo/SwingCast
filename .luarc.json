@@ -21,6 +21,7 @@
     "SettingsPanel",
     "SlashCmdList",
     "SwingTimerMainHandFrame",
-    "UISpecialFrames"
+    "UISpecialFrames",
+    "issecretvalue"
   ]
 }

@@ -15,6 +15,16 @@
 -- /swc  opens the options window (/swc help lists the settings).
 
 local ADDON = ...
+local pairs, ipairs, type, tonumber = pairs, ipairs, type, tonumber
+local floor, max, min, huge = math.floor, math.max, math.min, math.huge
+local format = string.format
+local GetTime = GetTime
+local WHITE = "Interface\\Buttons\\WHITE8x8"
+local SWING_NOT_FOUND = "built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer."
+
+local function clampInt(v, lo, hi)
+	return min(max(floor(v), lo), hi)
+end
 
 local DEFAULTS = {
 	icon = true,       -- spell icon on the cast bar
@@ -110,6 +120,7 @@ local function castInfo()
 end
 
 local editModeOpen = false
+local lagChannel
 
 local function castRefresh()
 	local tex, startMS, endMS, channel = castInfo()
@@ -130,18 +141,21 @@ local function castRefresh()
 
 	local dur = hasTimes and ((endMS - startMS) / 1000) or 0
 	local _, _, home, world = GetNetStats()
-	local lag = math.max(home or 0, world or 0) / 1000
+	local lag = max(home or 0, world or 0) / 1000
 	if db.latency and dur > 0 and lag > 0 then
-		local w = castBar:GetWidth() * math.min(lag / dur, 1)
-		lagTex:ClearAllPoints()
-		if channel then
-			lagTex:SetPoint("TOPLEFT", castBar, "TOPLEFT")
-			lagTex:SetPoint("BOTTOMLEFT", castBar, "BOTTOMLEFT")
-		else
-			lagTex:SetPoint("TOPRIGHT", castBar, "TOPRIGHT")
-			lagTex:SetPoint("BOTTOMRIGHT", castBar, "BOTTOMRIGHT")
+		local w = castBar:GetWidth() * min(lag / dur, 1)
+		if lagChannel ~= channel then
+			lagTex:ClearAllPoints()
+			if channel then
+				lagTex:SetPoint("TOPLEFT", castBar, "TOPLEFT")
+				lagTex:SetPoint("BOTTOMLEFT", castBar, "BOTTOMLEFT")
+			else
+				lagTex:SetPoint("TOPRIGHT", castBar, "TOPRIGHT")
+				lagTex:SetPoint("BOTTOMRIGHT", castBar, "BOTTOMRIGHT")
+			end
+			lagChannel = channel
 		end
-		lagTex:SetWidth(math.max(w, 1))
+		lagTex:SetWidth(max(w, 1))
 		lagTex:Show()
 	else
 		lagTex:Hide()
@@ -154,11 +168,11 @@ local function castOnUpdate()
 	local tenths
 	if db.time and castEnd then
 		local left = castEnd - GetTime()
-		if left > 0 then tenths = math.floor(left * 10 + 0.5) end
+		if left > 0 then tenths = floor(left * 10 + 0.5) end
 	end
 	if tenths == shownTenths then return end
 	shownTenths = tenths
-	timeText:SetText(tenths and string.format("%.1f", tenths / 10) or "")
+	timeText:SetText(tenths and format("%.1f", tenths / 10) or "")
 end
 
 -- Edit Mode's box around the cast bar: widened to the left while the icon sits
@@ -191,7 +205,7 @@ end
 
 applyIcon = function()
 	if not icon then return end
-	local h = math.max(castBar:GetHeight(), 10)
+	local h = max(castBar:GetHeight(), 10)
 	icon:ClearAllPoints()
 	if db.iconInside then
 		icon:SetSize(h, h)
@@ -211,6 +225,12 @@ applyIcon = function()
 	end
 	applySelection()
 end
+
+local CAST_EVENTS = {
+	"UNIT_SPELLCAST_START", "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_STOP",
+	"UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_START",
+	"UNIT_SPELLCAST_CHANNEL_UPDATE", "UNIT_SPELLCAST_CHANNEL_STOP",
+}
 
 local function setupCastBar()
 	castBar = PlayerCastingBarFrame or CastingBarFrame
@@ -237,9 +257,7 @@ local function setupCastBar()
 	applyLook()
 
 	local ev = CreateFrame("Frame")
-	for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_DELAYED", "UNIT_SPELLCAST_STOP",
-		"UNIT_SPELLCAST_FAILED", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_CHANNEL_START",
-		"UNIT_SPELLCAST_CHANNEL_UPDATE", "UNIT_SPELLCAST_CHANNEL_STOP" }) do
+	for _, e in ipairs(CAST_EVENTS) do
 		ev:RegisterUnitEvent(e, "player")
 	end
 	ev:RegisterEvent("PLAYER_REGEN_ENABLED")
@@ -302,7 +320,7 @@ mover:SetClampedToScreen(true)
 mover:SetFrameStrata("HIGH")
 mover:EnableMouse(false)
 mover:RegisterForDrag("LeftButton")
-mover:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+mover:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
 local moverLabel = mover:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 moverLabel:SetPoint("BOTTOM", mover, "TOP", 0, 4)
 local unlocked -- nil, "manual" or "editmode"
@@ -370,18 +388,22 @@ local function layoutStrips()
 	end
 end
 
+local function endPreviewState()
+	for i = 1, #strips do
+		strips[i].previewInit = false
+		strips[i].previewTenths = nil
+	end
+	tint = queuedColor()
+	applyBarColors()
+	layoutStrips()
+end
+
 -- The preview runs while the strip is unlocked or the options window is open.
 local function updatePreview()
 	local wasPreview = testUntil ~= nil
-	testUntil = (unlocked or optionsShown) and math.huge or nil
+	testUntil = (unlocked or optionsShown) and huge or nil
 	if wasPreview and not testUntil then
-		for i = 1, #strips do
-			strips[i].previewInit = false
-			strips[i].previewTenths = nil
-		end
-		tint = queuedColor()
-		applyBarColors()
-		layoutStrips()
+		endPreviewState()
 	elseif testUntil and not wasPreview then
 		layoutStrips()
 	end
@@ -395,7 +417,7 @@ local function detach()
 	if not db.attach then return end
 	local b = strips[1] and strips[1].bar
 	if castBarOk and b and b:GetLeft() then
-		db.width = math.min(math.max(math.floor(b:GetWidth() + 0.5), WIDTH_MIN), WIDTH_MAX)
+		db.width = clampInt(b:GetWidth() + 0.5, WIDTH_MIN, WIDTH_MAX)
 		db.pos = { "TOPLEFT", "BOTTOMLEFT", b:GetLeft(), b:GetTop() }
 	end
 	db.attach = false
@@ -420,7 +442,7 @@ end
 local function unlock(how)
 	if #strips == 0 then
 		if how ~= "editmode" then
-			P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
+			P(SWING_NOT_FOUND)
 		end
 		return
 	end
@@ -489,14 +511,27 @@ local function checkCastBar()
 	end
 end
 
+local function onEditModeEnter()
+	editModeOpen = true
+	applyIcon()
+	unlock("editmode")
+end
+
+local function onEditModeExit()
+	editModeOpen = false
+	applyIcon()
+	if unlocked == "editmode" then lock() end
+	checkCastBar()
+end
+
 -- The game's Edit Mode: the strip shows up there and can be dragged like the game's frames.
 local function hookEditMode()
 	if EventRegistry and EventRegistry.RegisterCallback then
-		EventRegistry:RegisterCallback("EditMode.Enter", function() editModeOpen = true; applyIcon(); unlock("editmode") end, mover)
-		EventRegistry:RegisterCallback("EditMode.Exit", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end; checkCastBar() end, mover)
+		EventRegistry:RegisterCallback("EditMode.Enter", onEditModeEnter, mover)
+		EventRegistry:RegisterCallback("EditMode.Exit", onEditModeExit, mover)
 	elseif EditModeManagerFrame then
-		hooksecurefunc(EditModeManagerFrame, "EnterEditMode", function() editModeOpen = true; applyIcon(); unlock("editmode") end)
-		hooksecurefunc(EditModeManagerFrame, "ExitEditMode", function() editModeOpen = false; applyIcon(); if unlocked == "editmode" then lock() end; checkCastBar() end)
+		hooksecurefunc(EditModeManagerFrame, "EnterEditMode", onEditModeEnter)
+		hooksecurefunc(EditModeManagerFrame, "ExitEditMode", onEditModeExit)
 	end
 end
 
@@ -622,13 +657,7 @@ driver:SetScript("OnUpdate", function()
 	local now = GetTime()
 	if testUntil and now > testUntil then
 		testUntil = nil
-		for i = 1, #strips do
-			strips[i].previewInit = false
-			strips[i].previewTenths = nil
-		end
-		tint = queuedColor()
-		applyBarColors()
-		layoutStrips()
+		endPreviewState()
 	end
 	if not (db.swing or testUntil) then
 		syncDriver()
@@ -660,7 +689,7 @@ local function makeStrip(native, isMainHand)
 	local border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
 	border:SetPoint("TOPLEFT", -1, 1)
 	border:SetPoint("BOTTOMRIGHT", 1, -1)
-	border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+	border:SetBackdrop({ edgeFile = WHITE, edgeSize = 1 })
 	border:SetBackdropBorderColor(0, 0, 0, 0.9)
 
 	local spark = bar:CreateTexture(nil, "OVERLAY")
@@ -702,7 +731,7 @@ applyLook = function()
 		lagTex:SetColorTexture(r, g, b, 0.45)
 	end
 	for _, s in ipairs(strips) do
-		s.text:SetFont(path, math.max(db.fontSize - 2, 7), "OUTLINE")
+		s.text:SetFont(path, max(db.fontSize - 2, 7), "OUTLINE")
 	end
 	applyBarColors()
 end
@@ -717,7 +746,7 @@ local function setupSwing()
 		end
 	end
 	if #strips == 0 then
-		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
+		P(SWING_NOT_FOUND)
 		return
 	end
 	if queueList and not queueEvents then
@@ -774,10 +803,10 @@ end
 
 local function startTest()
 	if #strips == 0 then
-		P("built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer.")
+		P(SWING_NOT_FOUND)
 		return
 	end
-	testUntil = math.max(testUntil or 0, GetTime() + 8) -- never cuts short the open window's preview
+	testUntil = max(testUntil or 0, GetTime() + 8) -- never cuts short the open window's preview
 	layoutStrips()
 	syncDriver()
 	P("8 s preview of the swing strip, the second half tinted as if Maul were queued.")
@@ -887,10 +916,14 @@ local function buildWindow()
 	refreshOptions = function() if win then win:Refresh() end end
 end
 
+local function ensureWindow()
+	if not win then buildWindow() end
+	return win
+end
+
 local function openOptions()
 	if not db then return end
-	if not win then buildWindow() end
-	win:Toggle()
+	ensureWindow():Toggle()
 end
 
 -- The game's options only point to the window, so the addon is still found there.
@@ -901,11 +934,15 @@ local function registerSettings()
 		layout:AddInitializer(CreateSettingsButtonInitializer("SwingCast has its own window", "Open", function()
 			if SettingsPanel and SettingsPanel:IsShown() then HideUIPanel(SettingsPanel) end
 			if not db then return end
-			if not win then buildWindow() end
-			win:Show()
+			ensureWindow():Show()
 		end, "Opens the SwingCast window. It can be dragged anywhere and stays open while you play.", true))
 	end
 	Settings.RegisterAddOnCategory(category)
+end
+
+-- Entry in the game's addon menu (the button next to the minimap) and minimap click handler.
+function SwingCast_OnCompartmentClick(_, button)
+	if button == "RightButton" then startTest() else openOptions() end
 end
 
 local function registerMinimap()
@@ -917,9 +954,7 @@ local function registerMinimap()
 		type = "launcher",
 		text = ADDON,
 		icon = "Interface\\AddOns\\SwingCast\\Icons\\minimap",
-		OnClick = function(_, button)
-			if button == "RightButton" then startTest() else openOptions() end
-		end,
+		OnClick = SwingCast_OnCompartmentClick,
 		OnTooltipShow = function(tt)
 			tt:AddLine(ADDON)
 			tt:AddLine("|cffffffffLeft-click:|r options", 0.8, 0.8, 0.8)
@@ -929,11 +964,6 @@ local function registerMinimap()
 	db.minimap = db.minimap or {}
 	db.minimap.hide = not db.showMinimap
 	LDBIcon:Register(ADDON, obj, db.minimap)
-end
-
--- Entry in the game's addon menu (the button next to the minimap).
-function SwingCast_OnCompartmentClick(_, button)
-	if button == "RightButton" then startTest() else openOptions() end
 end
 
 ---------------------------------------------------------------- settings
@@ -969,14 +999,14 @@ SlashCmdList.SWINGCAST = function(msg)
 	elseif cmd == "lock" then
 		P(lock() and "swing strip locked." or "swing strip is already locked.")
 	elseif cmd == "width" and num then
-		db.width = math.min(math.max(math.floor(num), WIDTH_MIN), WIDTH_MAX)
+		db.width = clampInt(num, WIDTH_MIN, WIDTH_MAX)
 		layoutStrips()
 		P("swing strip width: " .. db.width .. (db.attach and " (used once the strip has its own position)" or ""))
 	elseif cmd == "position" and arg == "reset" then
 		resetPosition()
 		P("swing strip back under the cast bar.")
 	elseif cmd == "height" and num then
-		db.height = math.min(math.max(math.floor(num), 2), 20)
+		db.height = clampInt(num, 2, 20)
 		layoutStrips()
 		P("swing strip height: " .. db.height)
 	elseif cmd == "test" then
@@ -991,7 +1021,7 @@ SlashCmdList.SWINGCAST = function(msg)
 			P("/swc color swing|queued|cleave|latency|reset")
 		end
 	elseif cmd == "font" and num then
-		db.fontSize = math.min(math.max(math.floor(num), 7), 20)
+		db.fontSize = clampInt(num, 7, 20)
 		applyLook()
 		P("font size: " .. db.fontSize)
 	elseif cmd == "minimap" then
@@ -1017,7 +1047,7 @@ SlashCmdList.SWINGCAST = function(msg)
 	else
 		P("/swc opens the window. /swc <setting> switches it on or off:")
 		for _, k in ipairs(ORDER) do
-			print(string.format("  %s - %s (%s)", k, TOGGLES[k], db[k] and "on" or "off"))
+			print(format("  %s - %s (%s)", k, TOGGLES[k], db[k] and "on" or "off"))
 		end
 		print("  height <2-20> - swing strip height (" .. db.height .. ")")
 		print("  unlock - drag the swing strip anywhere, lock - fix it again")

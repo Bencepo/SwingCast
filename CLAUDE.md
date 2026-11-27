@@ -7,7 +7,7 @@ SwingCast: extends the standard player cast bar for WoW Forever (Lua 5.1). Autho
 - `SwingCast.lua`: everything (cast bar additions, swing strip, options window, minimap button, events). `/swc` opens the options.
 - `Icons/minimap.tga`: in-game icon from the Bencepo logo family. `media/logo.png`: logo for CurseForge, Wago and the website (not packaged).
 - `Libs/`: LibStub, CallbackHandler, LibDataBroker, LibDBIcon, BencepoUI. The options window is its own frame (BencepoUI, like the other Bencepo addons; `opts.bugUrl` gives the "Report a bug" button).
-- `Libs/BencepoUI` is shared by all Bencepo addons and must be the same file in each (canonical copy: minor 4, Nov 2026). LibStub loads only the highest minor, so two different copies with the same minor make the result depend on load order. Change it in one repo, bump the minor, copy it to the others.
+- `Libs/BencepoUI` is shared by all Bencepo addons and must be the same file in each (canonical copy: minor 6, Nov 2026). LibStub loads only the highest minor, so two different copies with the same minor make the result depend on load order. Change it in one repo, bump the minor, copy it to the others.
 
 ## How it works
 

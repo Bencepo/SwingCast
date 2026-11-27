@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Settings window: "More from Bencepo" button in the footer links to all Bencepo addons (BencepoUI 6).
+
 ## 1.1.3
 
 - Zero idle frame work: the swing driver sleeps whenever no swing bar or preview is active, and queued-ability tinting updates on `CURRENT_SPELL_CAST_CHANGED` instead of polling `IsCurrentSpell` 20 times per second.

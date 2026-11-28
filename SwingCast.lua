@@ -6,11 +6,11 @@
 --   * remaining cast time on the bar
 --   * latency zone at the end of the bar (red: what the server still needs)
 --   * the swing timer as a thin strip right under the bar
--- The swing strip mirrors Forever's built-in swing timer (Blizzard_SwingTimer). That
--- timer is the only accurate one, because Forever keeps the combat log from addons.
--- SwingCast only draws it in its own place and look, and tints it while an
+-- The swing strip runs on the game's PLAYER_SWING event: Forever reports each of your
+-- swings (main hand, off hand, ranged) with its duration and without secrecy, so the
+-- strip needs neither the combat log nor the built-in swing timer. It is tinted while an
 -- on-next-swing ability (Maul, Heroic Strike, Cleave, Raptor Strike) is queued.
--- The built-in swing timer has to be switched on (Options > Advanced Options > Swing Timer).
+-- If the built-in swing timer is switched on, its bars can be hidden (hideNative).
 --
 -- /swc  opens the options window (/swc help lists the settings).
 
@@ -20,7 +20,7 @@ local floor, max, min, huge = math.floor, math.max, math.min, math.huge
 local format = string.format
 local GetTime = GetTime
 local WHITE = "Interface\\Buttons\\WHITE8x8"
-local SWING_NOT_FOUND = "built-in swing timer not found. Switch it on: Options > Advanced Options > Swing Timer."
+local SWING_NOT_FOUND = "swing strip not ready yet, try again in a moment."
 
 local function clampInt(v, lo, hi)
 	return min(max(floor(v), lo), hi)
@@ -65,6 +65,9 @@ local FONTS = {
 	{ key = "SKURRI", label = "Skurri", path = "Fonts\\SKURRI.TTF" },
 }
 
+-- A full strip stays this long after its swing is due, so it does not flicker while
+-- the next swing's event is on its way, and hides when auto attack stops.
+local SWING_GRACE = 0.4
 local SWING_FRAMES = { "SwingTimerMainHandFrame", "SwingTimerOffHandFrame", "SwingTimerRangedFrame" }
 
 -- All ranks: an old action button can still hold a low rank, and IsCurrentSpell
@@ -275,6 +278,32 @@ end
 
 ---------------------------------------------------------------- swing strips
 local strips = {}   -- { native = frame, bar = our StatusBar, isMainHand = bool }
+
+-- Current swing speed of a hand (1 main, 2 off, 3 ranged). The game already counts
+-- in Cat Form, Bear Form, haste buffs and slows; nil when that hand has no weapon.
+-- Off hand counts only with a weapon in it: a shield or held-in-off-hand item never swings.
+local offHandWeapon
+local function hasOffHandWeapon()
+	if offHandWeapon == nil then
+		local id = GetInventoryItemID("player", 17)
+		local classID = id and select(6, C_Item.GetItemInfoInstant(id))
+		offHandWeapon = classID == 2 -- Enum.ItemClass.Weapon
+	end
+	return offHandWeapon
+end
+
+local function speedFor(i)
+	local v
+	if i == 2 and not hasOffHandWeapon() then return nil end
+	if i == 3 then
+		v = UnitRangedDamage("player")
+	else
+		local mh, oh = UnitAttackSpeed("player")
+		v = (i == 2) and oh or mh
+	end
+	if issecret(v) or type(v) ~= "number" or v <= 0 then return nil end
+	return v
+end
 local tint = "swing"
 local testUntil
 
@@ -540,13 +569,21 @@ local settingAlpha = false
 local function nativeAlpha()
 	return (db and db.swing and db.hideNative and not failed) and 0 or 1
 end
+-- Hides only the built-in bar's contents. The frame's own alpha stays untouched:
+-- the game reads it for its fading and hides the bar for good when it finds 0.
+local function setNativeLook(native, a)
+	if not native then return end
+	settingAlpha = true
+	if native:GetAlpha() == 0 then native:SetAlpha(1) end -- undo the old way of hiding
+	for _, r in ipairs({ native:GetRegions() }) do r:SetAlpha(a) end
+	for _, c in ipairs({ native:GetChildren() }) do c:SetAlpha(a) end
+	settingAlpha = false
+end
 local function applyNativeLook()
 	local a = nativeAlpha()
-	settingAlpha = true
 	for _, s in ipairs(strips) do
-		s.native:SetAlpha(a)
+		setNativeLook(s.native, a)
 	end
-	settingAlpha = false
 end
 
 local function setStripVisible(s, show)
@@ -556,15 +593,16 @@ local function setStripVisible(s, show)
 	return true
 end
 
--- Forever hands some combat values to addons as "secret" values: they can be passed
--- on to a bar or a text, but not compared or calculated with. So the strip copies the
--- built-in bar's values and its own seconds label as they are, without arithmetic.
+-- The strip draws its own swing times from PLAYER_SWING (no secret values involved).
 local function stripUpdate(s, now)
 	if testUntil then
 		local f = (now % 2) / 2
 		if not s.previewInit then
 			s.bar:SetMinMaxValues(0, 1)
 			s.previewInit = true
+			s.liveInit = false
+			s.liveTenths = nil
+			s.liveMode = nil
 		end
 		s.bar:SetValue(f)
 		if db.swingText then
@@ -581,43 +619,51 @@ local function stripUpdate(s, now)
 		end
 		return setStripVisible(s, true)
 	end
-	local sb = s.native.StatusBar
-	local mn, mx = sb:GetMinMaxValues()
-	if mn == nil or mx == nil then return setStripVisible(s, false) end
-	s.bar:SetMinMaxValues(mn, mx)
-	s.bar:SetValue(sb:GetValue())
+	s.liveMode = "run"
+	local dur = s.swingDur
+	local left = s.swingEnd - now
+	if left < 0 then left = 0 end
+	if not s.liveInit or s.liveDur ~= dur then
+		s.bar:SetMinMaxValues(0, dur)
+		s.liveDur, s.liveInit = dur, true
+	end
+	s.bar:SetValue(dur - left)
 	if db.swingText then
-		local label = sb.TimeLabel and sb.TimeLabel:GetText()
-		if label ~= nil and (issecret(label) or label ~= "") then
-			s.text:SetText(label)
+		local tenths = floor(left * 10 + 0.5)
+		if tenths ~= s.liveTenths then
+			s.liveTenths = tenths
+			s.text:SetText(format("%.1f", tenths / 10))
 			s.hadText = true
-		elseif s.hadText then
-			s.text:SetText("")
-			s.hadText = false
 		end
 	elseif s.hadText then
 		s.text:SetText("")
 		s.hadText = false
+		s.liveTenths = nil
 	end
 	return setStripVisible(s, true)
 end
 
 -- If the strip ever fails, the built-in bars come back, so a swing timer is never lost.
+-- "run": a swing is on its way; nil: hidden. A strip only shows while its swing runs.
+local function stripMode(s, now)
+	if s.swingEnd and now < s.swingEnd + SWING_GRACE then return "run" end
+	return nil
+end
+
 local function safeUpdate(s, now)
 	if failed then return false end
-	if not testUntil and not (db.swing and s.native.StatusBar and s.native:IsShown()) then
+	s.mode = stripMode(s, now)
+	if not testUntil and not (db.swing and s.mode) then
 		return setStripVisible(s, false)
 	end
 	local ok, changed = pcall(stripUpdate, s, now)
 	if not ok then
 		failed = true
-		settingAlpha = true
 		for _, x in ipairs(strips) do
 			x.visible = false
 			x.bar:Hide()
-			x.native:SetAlpha(1)
+			setNativeLook(x.native, 1)
 		end
-		settingAlpha = false
 		P("swing strip off after an error, the built-in swing timer is shown again. /reload to retry. " .. tostring(changed))
 		if syncDriver then syncDriver() end
 		return false
@@ -628,15 +674,17 @@ end
 local driver = CreateFrame("Frame")
 driver:Hide()
 
-local function anyNativeShown()
+local function anySwingRunning()
+	local now = GetTime()
 	for i = 1, #strips do
-		if strips[i].native:IsShown() then return true end
+		local e = strips[i].swingEnd
+		if e and now < e + SWING_GRACE then return true end
 	end
 	return false
 end
 
 syncDriver = function()
-	local active = #strips > 0 and not failed and (testUntil ~= nil or (db and db.swing and anyNativeShown()))
+	local active = #strips > 0 and not failed and (testUntil ~= nil or (db and db.swing and anySwingRunning()))
 	if active then
 		driver:Show()
 	else
@@ -675,7 +723,7 @@ driver:SetScript("OnUpdate", function()
 	if not anyShown and not testUntil then syncDriver() end
 end)
 
-local function makeStrip(native, isMainHand)
+local function makeStrip(name, isMainHand)
 	local bar = CreateFrame("StatusBar", nil, UIParent)
 	bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
 	bar:SetStatusBarColor(color("swing"))
@@ -701,25 +749,30 @@ local function makeStrip(native, isMainHand)
 	local text = bar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	text:SetPoint("RIGHT", bar, "RIGHT", -2, 0)
 
-	-- Wake driver when the game starts showing a swing bar and keep the native bar hidden without polling.
-	native:HookScript("OnShow", function(self)
-		if nativeAlpha() == 0 and self:GetAlpha() ~= 0 then
-			settingAlpha = true
-			self:SetAlpha(0)
-			settingAlpha = false
-		end
-		syncDriver()
-	end)
-	hooksecurefunc(native, "SetAlpha", function(self, a)
-		if settingAlpha then return end
-		if nativeAlpha() == 0 and a ~= 0 then
-			settingAlpha = true
-			self:SetAlpha(0)
-			settingAlpha = false
-		end
-	end)
+	return { name = name, bar = bar, text = text, spark = spark, isMainHand = isMainHand, visible = false, hadText = false }
+end
 
-	return { native = native, bar = bar, text = text, spark = spark, isMainHand = isMainHand, visible = false, hadText = false }
+-- The built-in swing timer (if the game loads it): only its look is hidden, nothing is read from it.
+local function hookNative(s)
+	if s.native then return end
+	local native = _G[s.name]
+	if not (native and native.StatusBar) then return end
+	s.native = native
+	native:HookScript("OnShow", function(self)
+		setNativeLook(self, nativeAlpha())
+	end)
+	-- the game may set the alpha of the bar's parts itself (flash, fade): keep them hidden
+	for _, c in ipairs({ native:GetChildren() }) do
+		hooksecurefunc(c, "SetAlpha", function(self, a)
+			if settingAlpha then return end
+			if nativeAlpha() == 0 and a ~= 0 then
+				settingAlpha = true
+				self:SetAlpha(0)
+				settingAlpha = false
+			end
+		end)
+	end
+	setNativeLook(native, nativeAlpha())
 end
 
 -- Font and colours, applied again whenever a setting changes.
@@ -736,19 +789,80 @@ applyLook = function()
 	applyBarColors()
 end
 
+local function hookNatives()
+	for _, s in ipairs(strips) do hookNative(s) end
+end
+
+-- PLAYER_SWING: (duration, swing type). The duration falls back to the weapon speed.
+local HAND_INDEX
+local function onSwing(dur, kind)
+	if not HAND_INDEX then
+		HAND_INDEX = {}
+		local e = Enum and Enum.PlayerSwingType
+		if e then
+			if e.MainHand then HAND_INDEX[e.MainHand] = 1 end
+			if e.OffHand then HAND_INDEX[e.OffHand] = 2 end
+			if e.Ranged then HAND_INDEX[e.Ranged] = 3 end
+		else
+			HAND_INDEX[0], HAND_INDEX[1], HAND_INDEX[2] = 1, 2, 3
+		end
+	end
+	if issecret(kind) or issecret(dur) then return end
+	local i = HAND_INDEX[kind]
+	local s = i and strips[i]
+	if not s then return end
+	local speed = speedFor(i)
+	if type(dur) ~= "number" or dur <= 0 then dur = speed end
+	if not dur then return end
+	local now = GetTime()
+	s.swingStart, s.swingDur, s.swingEnd, s.swingSpeed = now, dur, now + dur, speed
+	s.liveInit = false
+	syncDriver()
+end
+
+-- Speed changed mid-swing (shapeshift, haste buff on or off, slow): the rest of the
+-- running swing scales with it, as the game does.
+local function onSpeedChange()
+	local now = GetTime()
+	for i = 1, 2 do
+		local s = strips[i]
+		if s and s.swingEnd and now < s.swingEnd and s.swingSpeed then
+			local new = speedFor(i)
+			if new and new ~= s.swingSpeed then
+				local left = (s.swingEnd - now) * new / s.swingSpeed
+				s.swingEnd = now + left
+				s.swingDur = (now - s.swingStart) + left
+				s.swingSpeed = new
+			end
+		end
+	end
+end
+
 local queueEvents
+local swingEvents
 local function setupSwing()
 	if #strips > 0 then return end
 	for _, name in ipairs(SWING_FRAMES) do
-		local native = _G[name]
-		if native and native.StatusBar then
-			strips[#strips + 1] = makeStrip(native, name == "SwingTimerMainHandFrame")
+		strips[#strips + 1] = makeStrip(name, name == "SwingTimerMainHandFrame")
+	end
+	hookNatives()
+	for i, s in ipairs(strips) do s.index = i end
+	swingEvents = CreateFrame("Frame")
+	swingEvents:RegisterEvent("PLAYER_SWING")
+	swingEvents:RegisterUnitEvent("UNIT_ATTACK_SPEED", "player")
+	swingEvents:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+	swingEvents:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+	swingEvents:SetScript("OnEvent", function(_, event, a1, a2)
+		if event == "PLAYER_SWING" then
+			onSwing(a1, a2)
+		elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+			offHandWeapon = nil
+			if not hasOffHandWeapon() and strips[2] then strips[2].swingEnd = nil end
+			onSpeedChange()
+		else
+			onSpeedChange()
 		end
-	end
-	if #strips == 0 then
-		P(SWING_NOT_FOUND)
-		return
-	end
+	end)
 	if queueList and not queueEvents then
 		queueEvents = CreateFrame("Frame")
 		queueEvents:RegisterEvent("CURRENT_SPELL_CAST_CHANGED")
@@ -911,7 +1025,7 @@ local function buildWindow()
 	w:Button("Default position", 130, resetPosition, "Put the strip back under the cast bar."):SetPoint("LEFT", move, "RIGHT", 8, 0)
 	w:Button("Reset all", 100, function() SlashCmdList.SWINGCAST("reset") end, "All settings back to the defaults.")
 		:SetPoint("LEFT", move, "RIGHT", 146, 0)
-	w:Text(L, -426, "While this window is open the swing strip shows a preview. Needs the built-in swing timer: Options > Advanced Options > Swing Timer.", 350)
+	w:Text(L, -426, "While this window is open the swing strip shows a preview.", 350)
 
 	refreshOptions = function() if win then win:Refresh() end end
 end
@@ -1082,20 +1196,13 @@ loader:SetScript("OnEvent", function(self, event, name)
 		registerSettings()
 		registerMinimap()
 	elseif event == "ADDON_LOADED" and name == "Blizzard_SwingTimer" then
-		if IsLoggedIn() then
-			setupSwing()
-			if #strips > 0 then self:UnregisterEvent("ADDON_LOADED") end
-		end
+		hookNatives()
 	elseif event == "PLAYER_LOGIN" then
 		self:UnregisterEvent("PLAYER_LOGIN")
 		loginTime = GetTime()
 		setupCastBar()
 		hookEditMode()
-		local loaded = C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("Blizzard_SwingTimer")
-		if loaded or SwingTimerMainHandFrame then
-			setupSwing()
-			if #strips > 0 then self:UnregisterEvent("ADDON_LOADED") end
-		end
+		setupSwing()
 		-- Check cast bar layout again once Edit Mode / other UI addons have finished placing frames.
 		C_Timer.After(6, checkCastBar)
 	elseif event == "PLAYER_ENTERING_WORLD" then

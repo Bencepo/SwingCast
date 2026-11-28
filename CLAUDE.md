@@ -12,7 +12,7 @@ SwingCast: extends the standard player cast bar for WoW Forever (Lua 5.1). Autho
 ## How it works
 
 - Adds to Blizzard's cast bar instead of replacing it: spell icon, remaining cast time, latency zone.
-- The swing strip mirrors Forever's built-in swing timer (Blizzard_SwingTimer): Forever keeps the combat log from addons, so that timer is the only accurate source. The built-in timer must be on (Options > Advanced > Swing Timer); its own bars can be hidden.
+- The swing strip runs on the `PLAYER_SWING` event (duration, Enum.PlayerSwingType; readable, no secret values). Fallback duration: `UnitAttackSpeed` / `UnitRangedDamage`, which include forms, haste and slows. `UNIT_ATTACK_SPEED` and `UPDATE_SHAPESHIFT_FORM` rescale the rest of a running swing. A strip shows only while its swing runs (plus 0.4 s grace); the off-hand strip only with a weapon in the off hand. It no longer reads Blizzard_SwingTimer (in Nov 2026 those frames never showed for Ben, option on or off); if that timer is on, its bars can still be hidden. Ben rejected a dimmed idle strip in combat: no strip without a running swing.
 - The strip is tinted while an on-next-swing ability (Maul, Heroic Strike, Cleave, Raptor Strike) is queued.
 - Some combat values arrive as secret values: pass them through, never compare or do math on them.
 - Height, font, font size and colours are adjustable (Ben asked for this). Energy ticks are not needed: energy regenerates continuously in Forever.

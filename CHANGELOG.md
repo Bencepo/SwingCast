@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.1.4
 
+- Fix: the swing strip did not show in combat. It no longer depends on Forever's built-in swing timer: it now runs on the game's own swing event, so the "Swing Timer" game option is no longer needed.
+- The swing time follows your attack speed: Cat Form, Bear Form, haste buffs and slows are counted in, and a change mid-swing rescales the rest of the running swing.
+- The off-hand strip only shows with a weapon in the off hand.
 - Settings window: "More from Bencepo" button in the footer links to all Bencepo addons (BencepoUI 6).
 - Code cleanup, no change in behaviour.
 

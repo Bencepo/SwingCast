@@ -8,7 +8,7 @@
 
 - **Spell icon and cast time.** On the standard cast bar, inside it or left of it.
 - **Latency zone.** At the end of the bar: once the bar reaches it, press the next spell.
-- **Swing timer.** A thin strip under the cast bar with the seconds to the next swing.
+- **Swing timer.** A thin strip under the cast bar with the seconds to the next swing. It follows your attack speed: forms, haste buffs and slows count, also mid-swing. The off-hand strip shows only with a weapon in the off hand.
 - **Queued swing.** Orange while Maul, Heroic Strike or Raptor Strike is queued, blue for Cleave.
 - **Your look.** Height, width, position, font, font size and colours.
 
